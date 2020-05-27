@@ -1,3 +1,5 @@
 jupyter
 numpy
 scikit-image
+opencv-contrib-python-headless
+imutils
