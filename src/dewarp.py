@@ -149,7 +149,7 @@ def process_directory(inputDir, outputDir):
 
 
 def process_file(inputFile, outputFile):
-    print(f"Process {inputFile}")
+    print(f"Dewarp {inputFile}")
     image = ScanToMap(inputFile).run()
     cv2.imwrite(outputFile, image)
 
