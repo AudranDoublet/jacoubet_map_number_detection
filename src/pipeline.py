@@ -1,9 +1,9 @@
 import os
 import sys
 
-import dewarp
-import heatmaps
-import segmentation
+from . import dewarp
+from . import heatmaps
+from . import segmentation
 
 def check_already_done(output_file):
     return os.path.exists(output_file)
