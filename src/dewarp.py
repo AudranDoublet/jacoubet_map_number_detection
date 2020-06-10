@@ -146,24 +146,25 @@ def process_directory(inputDir, outputDir):
         process_file(
             os.path.join(inputDir, f),
             os.path.join(outputDir, f),
+            os.path.join(outputDir, 'dewarp_matrix.csv'),
         )
 
 
-def process_file(inputFile, outputFile):
+def process_file(inputFile, outputFile, matrixOutputFile):
     print(f"Dewarp {inputFile}")
     image, dewarp_matrix = ScanToMap(inputFile).run()
     cv2.imwrite(outputFile, image)
-
-    return dewarp_matrix
+    if dewarp_matrix is not None:
+        np.savetxt(matrixOutputFile, dewarp_matrix, delimiter=',')
 
 if __name__ == "__main__":
     import sys
 
-    assert len(sys.argv) == 3, "bad arguments"
+    assert len(sys.argv) == 4, "bad arguments"
 
-    _, inputFile, outputFile = sys.argv
+    _, inputFile, outputFile, matrixOutput = sys.argv
 
     if os.path.isdir(inputFile):
-        process_directory(inputFile, outputFile)
+        process_directory(inputFile, outputFile, matrixOutput)
     else:
-        process_file(inputFile, outputFile)
+        process_file(inputFile, outputFile, matrixOutput)
