@@ -3,6 +3,7 @@ import sys
 
 import dewarp
 import heatmaps
+import rewarp
 import segmentation
 
 def check_already_done(output_file):
@@ -14,11 +15,11 @@ class DewarpStep:
         Dewarp input image `input_file` and write result in `output_file`
         """
         if force or not check_already_done(output_file):
-            dewarp.process_file(input_file, output_file)
+            return dewarp.process_file(input_file, output_file)
 
 
     def run_pipeline(self, pipeline):
-        self.run(
+        pipeline.dewarp_matrix = self.run(
             pipeline.input_file(),
             pipeline.create_file("dewarp", "01_dewarped.png")
         )
@@ -67,12 +68,27 @@ class SegmentationStep:
             pipeline.create_file("segments", "04_segments")
         )
 
+class PostprocessingStep:
+    def run(self, input_file, input_matrix, output_file, force=False):
+
+        if force or not check_already_done(output_file):
+            rewarp.process_file(input_file, input_matrix, output_file)
+
+
+    def run_pipeline(self, pipeline):
+        self.run(
+            pipeline.file("segments"),
+            pipeline.dewarp_matrix,
+            pipeline.create_file("postprocessed", "05_submission.csv"),
+        )
+
 
 pipeline_steps = [
     ('Dewarp',        DewarpStep),
     ('Preprocessing', PreprocessingStep),
     ('Heatmaps',      HeatmapStep),
     ('Segmentation',  SegmentationStep),
+    ('Postprocessing', PostprocessingStep),
 ]
 
 class Pipeline:
@@ -80,6 +96,8 @@ class Pipeline:
         self._input_file = input_file
         self._output_dir = output_dir
         self._known_files = {}
+
+        self.dewarp_matrix = None
 
 
     def input_file(self):

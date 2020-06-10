@@ -9,6 +9,7 @@ class ScanToMap:
 
     def __init__(self, path):
         self.path = path
+        self.transformMatrix = None
 
 
     def __unsharp(self, image):
@@ -90,8 +91,8 @@ class ScanToMap:
         ], dtype="float32")
 
         # compute final image
-        transformMatrix = cv2.getPerspectiveTransform(rect, dst)
-        return cv2.warpPerspective(image, transformMatrix, (maxWidth, maxHeight))
+        self.transformMatrix = cv2.getPerspectiveTransform(rect, dst)
+        return cv2.warpPerspective(image, self.transformMatrix, (maxWidth, maxHeight))
 
 
     def __try_run(self):
@@ -129,9 +130,9 @@ class ScanToMap:
             res = self.__try_run()
 
         if res is not None:
-            return res
+            return res, self.transformMatrix
         else:
-            return cv2.imread(self.path)
+            return cv2.imread(self.path), None
 
 
 
@@ -150,9 +151,10 @@ def process_directory(inputDir, outputDir):
 
 def process_file(inputFile, outputFile):
     print(f"Dewarp {inputFile}")
-    image = ScanToMap(inputFile).run()
+    image, dewarp_matrix = ScanToMap(inputFile).run()
     cv2.imwrite(outputFile, image)
 
+    return dewarp_matrix
 
 if __name__ == "__main__":
     import sys
