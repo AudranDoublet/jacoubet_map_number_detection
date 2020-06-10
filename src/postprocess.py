@@ -35,8 +35,8 @@ def get_detection_grid(image_path, detections, dewarp_matrix):
 
     for detect in detections:
         orig_coords = rewarp_coord(detect['coords'], rewarp_matrix)
-        i = int(orig_coords[0]) // 100
-        j = int(orig_coords[1]) // 100
+        i = int(orig_coords[1]) // 100
+        j = int(orig_coords[0]) // 100
 
         grid[i][j].append(int(detect['label']))
 
@@ -53,7 +53,7 @@ def dump_submission(image_path, detections, dewarp_matrix_file, output_file):
         csv_writer = csv.writer(file)
         for i in range(height):
             for j in range(width):
-                tile_id = f'{atlas_id}_{i}_{j}'
+                tile_id = f'{atlas_id}_{j}_{i}'
                 if len(grid[i][j]):
                     labels = ' '.join(str(label) for label in sorted(grid[i][j]))
                 else:
