@@ -11,7 +11,9 @@ import numpy as np
 def rewarp_coord(coords, rewarp_matrix):
     if rewarp_matrix is None:
         return coords
-    coords = np.array([coords], dtype=np.float64)
+
+    # cv2 reads coordinates as x, y
+    coords = np.array([[coords[1], coords[0]]], dtype=np.float64)
 
     return cv2.perspectiveTransform(coords[:, np.newaxis], rewarp_matrix)[0, 0]
 
