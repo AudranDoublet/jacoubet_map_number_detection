@@ -5,24 +5,26 @@ import dewarp
 import grid_detection
 import road_segmentation
 import heatmaps
+import postprocess
 import segmentation
 
 def check_already_done(output_file):
     return os.path.exists(output_file)
 
 class DewarpStep:
-    def run(self, input_file, output_file, force=False):
+    def run(self, input_file, output_file, matrix_output_file, force=False):
         """
         Dewarp input image `input_file` and write result in `output_file`
         """
         if force or not check_already_done(output_file):
-            dewarp.process_file(input_file, output_file)
+            dewarp.process_file(input_file, output_file, matrix_output_file)
 
 
     def run_pipeline(self, pipeline):
         self.run(
             pipeline.input_file(),
-            pipeline.create_file("dewarp", "01_dewarped.png")
+            pipeline.create_file("dewarp", "01_dewarped.png"),
+            pipeline.create_file("dewarp_matrix", "01_dewarp_matrix.csv")
         )
 
 
@@ -101,6 +103,20 @@ class SegmentationStep:
             pipeline.create_file("segments", "04_segments")
         )
 
+class PostprocessingStep:
+    def run(self, input_file, detection_file, dewarp_matrix_file, output_file, force=False):
+
+        if force or not check_already_done(output_file):
+            postprocess.process_file(input_file, detection_file, dewarp_matrix_file, output_file)
+
+    def run_pipeline(self, pipeline):
+        self.run(
+            pipeline._input_file,
+            'output/detections.json',
+            pipeline.file("dewarp_matrix"),
+            pipeline.create_file("postprocessed", "05_submission.csv"),
+        )
+
 
 pipeline_steps = [
     ('Dewarp',           DewarpStep),
@@ -109,6 +125,7 @@ pipeline_steps = [
     ('RoadSegmentation', RoadSegmentation),
     ('Heatmaps',         HeatmapStep),
     ('Segmentation',     SegmentationStep),
+    ('Postprocessing',   PostprocessingStep),
 ]
 
 class Pipeline:
@@ -116,6 +133,8 @@ class Pipeline:
         self._input_file = input_file
         self._output_dir = output_dir
         self._known_files = {}
+
+        self.dewarp_matrix = None
 
 
     def input_file(self):
