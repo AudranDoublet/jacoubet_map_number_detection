@@ -117,9 +117,7 @@ class LabelingStep:
 
 class PostprocessingStep:
     def run(self, input_file, detection_file, dewarp_matrix_file, output_file, force=False):
-
-        if force or not check_already_done(output_file):
-            postprocess.process_file(input_file, detection_file, dewarp_matrix_file, output_file)
+        postprocess.process_file(input_file, detection_file, dewarp_matrix_file, output_file)
 
     def run_pipeline(self, pipeline):
         self.run(
