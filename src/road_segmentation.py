@@ -25,17 +25,15 @@ def otsu_image(image, threshold=0):
     return binary_dilation(gray > threshold)
 
 
-def process_file(inputFile, outputFile):
+def process_file(inputFile, gridFile, outputFile):
     image = skimage.io.imread(inputFile)
+    road_mask = skimage.io.imread(gridFile) > 120
     binary = remove_small_objects(np.any(otsu_image(image), axis=2), 5000)
 
-    img = binary_closing(binary, square(10))
-    img = remove_small_holes(img, 100000)
+    img = binary
 
-    c = 300
-
-    img = img ^ binary_erosion(img, np.array([[1]] * c)) ^ binary_erosion(img, np.array([[1] * c]))
-    img = binary_closing(img, square(10))
-    #img = remove_small_holes(img, 20000000)
+    img = ((255*img) - (road_mask*255)) > 0
+    img = binary_closing(img, square(15))
+    img = remove_small_holes(img, 10000000)
 
     skimage.io.imsave(outputFile, img*255)

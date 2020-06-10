@@ -6,6 +6,9 @@ from skimage.morphology import binary_dilation
 def find_nearest_white(img, target):
     nonzero = cv2.findNonZero(img)
 
+    if nonzero is None:
+        return None
+
     distances = np.sqrt((nonzero[:,:,0] - target[0]) ** 2 + (nonzero[:,:,1] - target[1]) ** 2)
     nearest_index = np.argmin(distances)
     return nonzero[nearest_index][0]
@@ -15,6 +18,9 @@ def segment_orientation(segment):
     segment = binary_dilation(segment > 0) ^ (segment > 0)
 
     nonzero = cv2.findNonZero(segment * 255)
+
+    if nonzero is None:
+        return 0.0
 
     y_value = nonzero[:,:,0]
 
@@ -193,7 +199,7 @@ def extract_single_numbers(images):
             singles.append(obj)
         else:
             multiples.append(obj)
-            
+
     return singles, multiples
 
 
@@ -270,6 +276,10 @@ def process_from_heatmaps(inputFile, roadFile, outputFile):
         pos = (int(pos[0]), int(pos[1]))
 
         nearest_road = find_nearest_white(roads[pos[0]-30:pos[0]+30, pos[1]-30:pos[1]+30], [30, 30])
+
+        if nearest_road is None:
+            continue
+
         nearest_road = [nearest_road[1], nearest_road[0]]
 
         nearest_road[0] += pos[0] - 30

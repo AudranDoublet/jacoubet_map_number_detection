@@ -2,6 +2,7 @@ import os
 import sys
 
 import dewarp
+import grid_detection
 import road_segmentation
 import heatmaps
 import segmentation
@@ -25,6 +26,22 @@ class DewarpStep:
         )
 
 
+class GridDetectionStep:
+    def run(self, input_file, output_file, force=False):
+        """
+        Dewarp input image `input_file` and write result in `output_file`
+        """
+        if force or not check_already_done(output_file):
+            grid_detection.process_file(input_file, output_file)
+
+
+    def run_pipeline(self, pipeline):
+        self.run(
+            pipeline.file("dewarp"),
+            pipeline.create_file("grid", "02_grid.png")
+        )
+
+
 class PreprocessingStep:
     def run(self, input_file, output_file, force=False):
         import shutil
@@ -39,14 +56,15 @@ class PreprocessingStep:
 
 
 class RoadSegmentation:
-    def run(self, input_file, output_file, force=False):
+    def run(self, input_file, grid_file, output_file, force=False):
         if force or not check_already_done(output_file):
-            road_segmentation.process_file(input_file, output_file)
+            road_segmentation.process_file(input_file, grid_file, output_file)
 
 
     def run_pipeline(self, pipeline):
         self.run(
             pipeline.file("preprocessed"),
+            pipeline.file("grid"),
             pipeline.create_file("roads", "02_road_mask.png")
         )
 
@@ -86,6 +104,7 @@ class SegmentationStep:
 
 pipeline_steps = [
     ('Dewarp',           DewarpStep),
+    ('GridDetection',    GridDetectionStep),
     ('Preprocessing',    PreprocessingStep),
     ('RoadSegmentation', RoadSegmentation),
     ('Heatmaps',         HeatmapStep),
