@@ -5,6 +5,7 @@ import dewarp
 import heatmaps
 import postprocess
 import segmentation
+import labeller
 
 def check_already_done(output_file):
     return os.path.exists(output_file)
@@ -69,6 +70,17 @@ class SegmentationStep:
             pipeline.create_file("segments", "04_segments")
         )
 
+class LabelingStep:
+    def run(self, input_directory, output_file, model_path, force=False):
+        labeller.label_segments(input_directory, output_file, model_path)
+
+    def run_pipeline(self, pipeline):
+        self.run(
+            input_directory=pipeline.file("segments"),
+            output_file=pipeline.create_file("labels", "05_labels.json"),
+            model_path=pipeline.model_path
+        )
+
 class PostprocessingStep:
     def run(self, input_file, detection_file, dewarp_matrix_file, output_file, force=False):
 
@@ -78,37 +90,35 @@ class PostprocessingStep:
     def run_pipeline(self, pipeline):
         self.run(
             pipeline._input_file,
-            'output/detections.json',
+            pipeline.file("labels"),
             pipeline.file("dewarp_matrix"),
-            pipeline.create_file("postprocessed", "05_submission.csv"),
+            pipeline.create_file("postprocessed", "06_submission.csv"),
         )
-
 
 pipeline_steps = [
     ('Dewarp',        DewarpStep),
     ('Preprocessing', PreprocessingStep),
     ('Heatmaps',      HeatmapStep),
     ('Segmentation',  SegmentationStep),
+    ('Labelization',  LabelingStep),
     ('Postprocessing', PostprocessingStep),
 ]
 
 class Pipeline:
-    def __init__(self, input_file, output_dir):
+    def __init__(self, input_file, output_dir, model_path):
         self._input_file = input_file
         self._output_dir = output_dir
+        self.model_path = model_path
         self._known_files = {}
 
         self.dewarp_matrix = None
 
-
     def input_file(self):
         return self._input_file
-
 
     def create_file(self, idx, name):
         self._known_files[idx] = os.path.join(self._output_dir, name)
         return self.file(idx)
-
 
     def file(self, idx):
         return self._known_files[idx]
@@ -131,8 +141,8 @@ class Pipeline:
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 3:
-        print("Usage: pipeline.py <input_file> <output_dir>")
+    if len(sys.argv) != 4:
+        print("Usage: pipeline.py <input_file> <output_dir> <model_path>")
 
     else:
-        Pipeline(sys.argv[1], sys.argv[2]).run()
+        Pipeline(sys.argv[1], sys.argv[2], sys.argv[3]).run()
