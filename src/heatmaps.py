@@ -11,6 +11,8 @@ from skimage.measure import label, regionprops
 
 from skimage.morphology import *
 
+from scipy.ndimage.morphology import distance_transform_edt
+
 def otsu_image(image):
     gray = 1 - image
     threshold = threshold_otsu(gray)
@@ -27,7 +29,9 @@ def binary_image(image):
     return binary > 0
 
 
-def filter_results_simple(denoised, small):
+def filter_results_simple(denoised, small, road_mask):
+    distance_map = distance_transform_edt(road_mask)
+
     label_image = label(small)
 
     for i, region in enumerate(regionprops(label_image)):
@@ -49,6 +53,21 @@ def filter_results_simple(denoised, small):
         active_square_count = np.sum(box == i + 1)
 
         if black_count / total_count < 0.1 or active_square_count / total_square_count < 0.2:
+            sm = small[bbox[0]:bbox[2],bbox[1]:bbox[3]]
+            sm[box == i + 1] = 0
+            continue
+
+        non_road_count = np.sum(road_mask[bbox[0]:bbox[2],bbox[1]:bbox[3]][box == i + 1])
+
+        # if objet is on road, ignore it
+        if non_road_count / total_count < 0.9:
+            sm = small[bbox[0]:bbox[2],bbox[1]:bbox[3]]
+            sm[box == i + 1] = 0
+            continue
+
+        road_distances =  distance_map[bbox[0]:bbox[2],bbox[1]:bbox[3]][box == i + 1]
+
+        if np.min(road_distances) > 20 or np.min(road_distances) < 1 + 1e-3:
             sm = small[bbox[0]:bbox[2],bbox[1]:bbox[3]]
             sm[box == i + 1] = 0
             continue
@@ -80,23 +99,24 @@ def filter_results_connex(binary_otsu, small):
 
     return closed_small
 
-def process_image(image):
+def process_image(image, road_mask):
     denoised = rgb2gray(cv2.fastNlMeansDenoising(image))
     binary_otsu = otsu_image(denoised)
     binary = binary_image(denoised)
 
     # conserve only objects of the size of a number
     small = (remove_small_objects(binary, 5) * 255) - (remove_small_objects(binary, 400) * 255)
-    small = filter_results_simple(denoised, small)
+    small = filter_results_simple(denoised, small, road_mask)
     closed_small = filter_results_connex(binary_otsu, small)
 
     return np.bitwise_and(closed_small > 0, small > 0) * 255
 
 
-def process_file(inputFile, outputFile):
+def process_file(inputFile, roadFile, outputFile):
     print(f"Get {inputFile} heatmaps")
 
     image = skimage.io.imread(inputFile)
-    result = process_image(image)
+    road_mask = skimage.io.imread(roadFile)
+    result = process_image(image, road_mask)
 
     skimage.io.imsave(outputFile, result)

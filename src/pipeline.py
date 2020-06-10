@@ -2,6 +2,7 @@ import os
 import sys
 
 import dewarp
+import road_segmentation
 import heatmaps
 import segmentation
 
@@ -37,18 +38,32 @@ class PreprocessingStep:
         )
 
 
-class HeatmapStep:
+class RoadSegmentation:
     def run(self, input_file, output_file, force=False):
-        """
-        Find heatmaps
-        """
         if force or not check_already_done(output_file):
-            heatmaps.process_file(input_file, output_file)
+            road_segmentation.process_file(input_file, output_file)
 
 
     def run_pipeline(self, pipeline):
         self.run(
             pipeline.file("preprocessed"),
+            pipeline.create_file("roads", "02_road_mask.png")
+        )
+
+
+class HeatmapStep:
+    def run(self, input_file, road_file, output_file, force=False):
+        """
+        Find heatmaps
+        """
+        if force or not check_already_done(output_file):
+            heatmaps.process_file(input_file, road_file, output_file)
+
+
+    def run_pipeline(self, pipeline):
+        self.run(
+            pipeline.file("preprocessed"),
+            pipeline.file("roads"),
             pipeline.create_file("heatmaps", "03_heatmaps.png")
         )
 
@@ -69,10 +84,11 @@ class SegmentationStep:
 
 
 pipeline_steps = [
-    ('Dewarp',        DewarpStep),
-    ('Preprocessing', PreprocessingStep),
-    ('Heatmaps',      HeatmapStep),
-    ('Segmentation',  SegmentationStep),
+    ('Dewarp',           DewarpStep),
+    ('Preprocessing',    PreprocessingStep),
+    ('RoadSegmentation', RoadSegmentation),
+    ('Heatmaps',         HeatmapStep),
+    ('Segmentation',     SegmentationStep),
 ]
 
 class Pipeline:
