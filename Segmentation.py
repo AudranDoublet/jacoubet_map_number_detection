@@ -746,6 +746,184 @@ for obj in n5:
 show_images(sq)
 
 
+# In[47]:
+
+
+def get_proportions(new_objs):
+    obj1_nb_white = np.count_nonzero(new_objs[0])
+    obj2_nb_white = np.count_nonzero(new_objs[1])
+    div = obj1_nb_white / obj2_nb_white 
+    return div
+
+
+def add_result(img_res, nb_pixels, results):
+    """
+    Add result only if good cut:
+     - into 2 objects
+     - good proportions
+    """
+    objects = get_objects(img_res)
+    if len(objects) != 2: # if not 2 objects: bad cut
+        return
+
+    prop = get_proportions(objects)
+    if prop <= 2 and prop >= 1/2: # good proportions
+        res = {}
+        # save the proportions
+        res["prop"] = prop
+        # save the number of cut pixels
+        res["white_to_black"] = nb_pixels
+        # save the results
+        res["objects"] = objects
+
+        results.append(res)
+
+
+def pick_results(results):
+    """
+    Choose the best result:
+     - less changed pixels (minimum cut)
+     - best proportion if same cut
+    """
+    if len(results) == 0:
+        print("No res to pick")
+        return []
+
+    min_cut = results[0]["white_to_black"]
+    best_res = results[0]["objects"]
+    best_prop = results[0]["prop"]
+
+    for i in range(1, len(results)):
+        if min_cut > results[i]["white_to_black"] or \
+         (min_cut == results[i]["white_to_black"] and abs(best_prop - 1) > abs(results[i]["prop"] - 1)):
+            min_cut = results[i]["white_to_black"]
+            best_res = results[i]["objects"]
+
+    return best_res
+
+
+def multiple_to_single(original_img):
+    # un overlap
+
+    height, width = original_img.shape
+    # cut the object with a line
+    bounds_a = (-10, 10) # orientation of the line
+    bounds_b = (0, 2 * width // 3) # x axis and y axis
+
+    results = []
+
+    # a negative
+    for a in range(bounds_a[0], 0, 1):
+        origin = 0
+
+        for b in range(bounds_b[0], bounds_b[1]): # top bound
+            # copy the image to not modify it
+            tmp = np.copy(original_img)
+
+            nb_pixels = 0
+
+            # draw line <=> set white pixels to black
+            for x_0 in range(0, width - b):
+                y = origin - a * x_0
+                x = x_0 + b
+
+                y2 = origin - (a * (x_0 + 1))
+
+                yend = min(y2, height)
+
+                while y < yend:
+                    if tmp[y][x]:
+                        tmp[y][x] = 0
+                        nb_pixels += 1
+                    y += 1
+
+            add_result(tmp, nb_pixels, results)
+
+    # a positive
+    for a in range(0, bounds_a[1], 1):
+        origin = height - 1
+
+        for b in range(bounds_b[0], bounds_b[1]): # bottom bound
+            # copy the image to not modify it
+            tmp = np.copy(original_img)
+
+            nb_pixels = 0
+
+            # draw line <=> set white pixels to black
+            for x_0 in range(0, width):
+                y = origin - a * x_0
+                x = x_0 + b
+
+                if x >= width:
+                    break
+
+                y2 = origin - a * (x_0 + 1)
+
+                yend = max(y2, 0)
+
+                while y > yend:
+                    if not tmp[y][x]:
+                        tmp[y][x] = 0
+                        nb_pixels += 1
+                    y -= 1
+
+            add_result(tmp, nb_pixels, results)
+
+    return pick_results(results)
+
+def multiple_to_singles2(singles, original_imgs):
+    """
+    from list of single images and list of multiple images
+    return all images as single number
+    """
+    tmp = []
+    for img in original_imgs:
+        res = multiple_to_single(img)
+        if res:
+            tmp.extend(res)
+        else: # fail to cut
+            tmp.append(img)
+
+    # check ~ same shape
+    height = 0
+    width = 0
+    for img in singles + tmp:
+        height += img.shape[0]
+        width += img.shape[1]
+    length = len(singles) + len(tmp)
+    height /= length
+    width /= length
+
+    while len(tmp) > 0:
+        if tmp[0].shape[0] > 1.25 * height or tmp[0].shape[1] > 1.25 * width:
+            res = multiple_to_single(tmp[0])
+            if res:
+                tmp.extend(res)
+            else: # fail to cut
+                singles.append(tmp[0])
+        else:
+            singles.append(tmp[0])
+        tmp = tmp[1:]
+
+    return singles
+
+
+# In[48]:
+
+
+s5, m5 = extract_single_numbers(n5)
+show_images(m5)
+show_images(multiple_to_singles2(s5, m5))
+
+
+# In[52]:
+
+
+s3, m3 = extract_single_numbers(n3)
+show_images(m3)
+singles = multiple_to_singles2(s3, m3)
+show_images(singles)
+
 # ## Pipeline
 
 # In[92]:
@@ -769,11 +947,13 @@ def process_from_heatmaps(inputFile, outputFile):
     rectangles = create_rectangles_from_heatmap(heatmap)
 
     images, props = process(heatmap, None, ret_props=True)
+    singles, multiples = extract_single_numbers(images)
+    res_images = multiple_to_singles2(singles, multiples)
 
     import os
     os.makedirs(outputFile, exist_ok=True)
 
-    for i, image in enumerate(images):
+    for i, image in enumerate(res_images):
         with open('os.path.join(outputFile, f"{i:04}.json")', 'w') as f:
             json.dump(props_to_dict(props[i]), f)
         skimage.io.imsave(os.path.join(outputFile, f"{i:04}.png"), image.astype(np.uint8)*255)
