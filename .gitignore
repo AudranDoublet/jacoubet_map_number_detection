@@ -1,2 +1,6 @@
 env/
 __pycache__/
+/*.png
+output_*/
+.ipynb_checkpoints/
+Untitled.ipynb

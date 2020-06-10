@@ -1,4 +1,37 @@
+import math
 import skimage.io
+import cv2
+from skimage.morphology import binary_dilation
+
+def find_nearest_white(img, target):
+    nonzero = cv2.findNonZero(img)
+
+    if nonzero is None:
+        return None
+
+    distances = np.sqrt((nonzero[:,:,0] - target[0]) ** 2 + (nonzero[:,:,1] - target[1]) ** 2)
+    nearest_index = np.argmin(distances)
+    return nonzero[nearest_index][0]
+
+
+def segment_orientation(segment):
+    segment = binary_dilation(segment > 0) ^ (segment > 0)
+
+    nonzero = cv2.findNonZero(segment * 255)
+
+    if nonzero is None:
+        return 0.0
+
+    y_value = nonzero[:,:,0]
+
+    x1 = nonzero[np.argmin(y_value)][0]
+    x0 = nonzero[np.argmax(y_value)][0]
+
+    v_dir = (x1[0] - x0[0], x1[1] - x0[1])
+    angle = math.atan2(v_dir[1], v_dir[0])
+
+    return math.degrees(angle)
+
 
 def load_image(image_path):
     """
@@ -166,7 +199,7 @@ def extract_single_numbers(images):
             singles.append(obj)
         else:
             multiples.append(obj)
-            
+
     return singles, multiples
 
 
@@ -218,17 +251,19 @@ def process(img, marked, elt = skimage.morphology.disk(1), inversed=True, ret_pr
 import skimage.color
 import json
 
-def props_to_dict(props):
+def props_to_dict(props, angle):
     return {
         'bbox': props.bbox,
+        'angle': angle,
         'minor_axis_length': props.minor_axis_length,
         'major_axis_length': props.major_axis_length,
         'centroid': props.centroid,
         'orientation': props.orientation,
     }
 
-def process_from_heatmaps(inputFile, outputFile):
+def process_from_heatmaps(inputFile, roadFile, outputFile):
     heatmap = load_image(inputFile)
+    roads = 255 - load_image(roadFile)
 
     rectangles = create_rectangles_from_heatmap(heatmap)
 
@@ -238,9 +273,27 @@ def process_from_heatmaps(inputFile, outputFile):
     os.makedirs(outputFile, exist_ok=True)
 
     for i, image in enumerate(images):
+        pos = props[i].centroid
+        pos = (int(pos[0]), int(pos[1]))
+
+        nearest_road = find_nearest_white(roads[pos[0]-30:pos[0]+30, pos[1]-30:pos[1]+30], [30, 30])
+
+        if nearest_road is None:
+            continue
+
+        nearest_road = [nearest_road[1], nearest_road[0]]
+
+        nearest_road[0] += pos[0] - 30
+        nearest_road[1] += pos[1] - 30
+
+        angle = segment_orientation(roads[ nearest_road[0]-30:nearest_road[0]+30, nearest_road[1]-30:nearest_road[1]+30 ])
+
+        image = skimage.transform.rotate(image * 1.0, -angle, resize=True)
+
+
         with open(os.path.join(outputFile, f"{i:04}.json"), 'w') as f:
-            json.dump(props_to_dict(props[i]), f)
-        skimage.io.imsave(os.path.join(outputFile, f"{i:04}.png"), image.astype(np.uint8)*255)
+            json.dump(props_to_dict(props[i], angle), f)
+        skimage.io.imsave(os.path.join(outputFile, f"{i:04}.png"), (image * 255).astype(np.uint8))
 
 
 #process_from_heatmaps("output_dir/03_heatmaps.png", "results")
