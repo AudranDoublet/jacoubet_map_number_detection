@@ -69,16 +69,17 @@ class HeatmapStep:
 
 
 class SegmentationStep:
-    def run(self, input_file, output_file, force=False):
+    def run(self, input_file, road_file, output_file, force=False):
         """
         Segment heatmaps
         """
-        segmentation.process_from_heatmaps(input_file, output_file)
+        segmentation.process_from_heatmaps(input_file, road_file, output_file)
 
 
     def run_pipeline(self, pipeline):
         self.run(
             pipeline.file("heatmaps"),
+            pipeline.file("roads"),
             pipeline.create_file("segments", "04_segments")
         )
 
