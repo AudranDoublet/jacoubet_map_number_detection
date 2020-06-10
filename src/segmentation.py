@@ -251,9 +251,10 @@ def process(img, marked, elt = skimage.morphology.disk(1), inversed=True, ret_pr
 import skimage.color
 import json
 
-def props_to_dict(props):
+def props_to_dict(props, angle):
     return {
         'bbox': props.bbox,
+        'angle': angle,
         'minor_axis_length': props.minor_axis_length,
         'major_axis_length': props.major_axis_length,
         'centroid': props.centroid,
@@ -291,7 +292,7 @@ def process_from_heatmaps(inputFile, roadFile, outputFile):
 
 
         with open(os.path.join(outputFile, f"{i:04}.json"), 'w') as f:
-            json.dump(props_to_dict(props[i]), f)
+            json.dump(props_to_dict(props[i], angle), f)
         skimage.io.imsave(os.path.join(outputFile, f"{i:04}.png"), (image * 255).astype(np.uint8))
 
 
