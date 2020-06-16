@@ -4,3 +4,4 @@ scikit-image
 opencv-contrib-python-headless
 imutils
 bresenham
+structlog

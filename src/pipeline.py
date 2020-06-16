@@ -1,5 +1,6 @@
 import os
 import sys
+import structlog
 
 import dewarp
 import grid_detection
@@ -9,8 +10,11 @@ import postprocess
 import segmentation
 import labeller
 
+logger = structlog.get_logger()
+
 def check_already_done(output_file):
     return os.path.exists(output_file)
+
 
 class DewarpStep:
     def run(self, input_file, output_file, matrix_output_file, force=False):
@@ -178,13 +182,16 @@ class Pipeline:
 
 
     def _run_file(self, idx, from_step):
+        log = logger.new(file=self._input_files[idx])
+
         self._current_file = idx
         self._known_files = {}
 
         os.makedirs(self.file_output_dir(), exist_ok=True)
 
         for step in range(from_step, len(pipeline_steps)):
-            (_, impl) = pipeline_steps[step]
+            (name, impl) = pipeline_steps[step]
+            log.info("run_step", step=name)
 
             impl().run_pipeline(self)
 
