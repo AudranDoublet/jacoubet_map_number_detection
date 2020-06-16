@@ -155,10 +155,15 @@ class Pipeline:
         self._known_files = {}
         self._known_global_files = {
             "model": model_path,
-            "submission": os.path.join(output_dir, "submission.json"),
+            "submission": os.path.join(output_dir, "submission.csv"),
         }
 
         self.dewarp_matrix = None
+
+
+    def prepare_submission_file(self):
+        with open(self.global_file("submission"), "w") as f:
+            f.write("ID,numero\n")
 
 
     def input_file(self):
@@ -198,6 +203,7 @@ class Pipeline:
 
     def run(self, from_step=None):
         os.makedirs(self._output_dir, exist_ok=True)
+        self.prepare_submission_file()
 
         i = 0
 
