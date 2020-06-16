@@ -23,8 +23,8 @@ def get_detection_grid(image_path, detections, dewarp_matrix):
     image = skimage.io.imread(image_path)
     height, width = image.shape[:2]
 
-    height = int(np.ceil(height // 100))
-    width = int(np.ceil(width // 100))
+    height = int(np.ceil(height / 100))
+    width = int(np.ceil(width / 100))
 
     rewarp_matrix = np.linalg.pinv(dewarp_matrix) if dewarp_matrix is not None else None
 
@@ -53,7 +53,7 @@ def dump_submission(image_path, detections, dewarp_matrix_file, output_file):
         csv_writer = csv.writer(file)
         for i in range(height):
             for j in range(width):
-                tile_id = f'{atlas_id}_{j}_{i}'
+                tile_id = f'{atlas_id}_{j*100}_{i*100}'
                 if len(grid[i][j]):
                     labels = ' '.join(str(label) for label in sorted(grid[i][j]))
                 else:
