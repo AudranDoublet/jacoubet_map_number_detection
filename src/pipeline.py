@@ -1,5 +1,6 @@
 import os
 import sys
+import structlog
 
 import dewarp
 import grid_detection
@@ -9,8 +10,11 @@ import postprocess
 import segmentation
 import labeller
 
+logger = structlog.get_logger()
+
 def check_already_done(output_file):
     return os.path.exists(output_file)
+
 
 class DewarpStep:
     def run(self, input_file, output_file, matrix_output_file, force=False):
@@ -112,21 +116,19 @@ class LabelingStep:
         self.run(
             input_directory=pipeline.file("segments"),
             output_file=pipeline.create_file("labels", "05_labels.json"),
-            model_path=pipeline.model_path
+            model_path=pipeline.global_file("model")
         )
 
 class PostprocessingStep:
     def run(self, input_file, detection_file, dewarp_matrix_file, output_file, force=False):
-
-        if force or not check_already_done(output_file):
-            postprocess.process_file(input_file, detection_file, dewarp_matrix_file, output_file)
+        postprocess.process_file(input_file, detection_file, dewarp_matrix_file, output_file)
 
     def run_pipeline(self, pipeline):
         self.run(
-            pipeline._input_file,
+            pipeline.input_file(),
             pipeline.file("labels"),
             pipeline.file("dewarp_matrix"),
-            pipeline.create_file("postprocessed", "06_submission.csv"),
+            pipeline.global_file("submission"),
         )
 
 pipeline_steps = [
@@ -142,22 +144,57 @@ pipeline_steps = [
 
 class Pipeline:
     def __init__(self, input_file, output_dir, model_path):
-        self._input_file = input_file
+        if os.path.isdir(input_file):
+            self._input_files = [os.path.join(input_file, f) for f in os.listdir(input_file)]
+        else:
+            self._input_files = [input_file]
+
+        self._current_file = 0
         self._output_dir = output_dir
-        self.model_path = model_path
+
         self._known_files = {}
+        self._known_global_files = {
+            "model": model_path,
+            "submission": os.path.join(output_dir, "submission.json"),
+        }
 
         self.dewarp_matrix = None
 
+
     def input_file(self):
-        return self._input_file
+        return self._input_files[self._current_file]
+
+    def file_output_dir(self):
+        return os.path.join(self._output_dir, f"{self._current_file:03}")
+
 
     def create_file(self, idx, name):
-        self._known_files[idx] = os.path.join(self._output_dir, name)
+        self._known_files[idx] = os.path.join(self.file_output_dir(), name)
         return self.file(idx)
+
 
     def file(self, idx):
         return self._known_files[idx]
+
+
+    def global_file(self, idx):
+        return self._known_global_files[idx]
+
+
+    def _run_file(self, idx, from_step):
+        log = logger.new(file=self._input_files[idx])
+
+        self._current_file = idx
+        self._known_files = {}
+
+        os.makedirs(self.file_output_dir(), exist_ok=True)
+
+        for step in range(from_step, len(pipeline_steps)):
+            (name, impl) = pipeline_steps[step]
+            log.info("run_step", step=name)
+
+            impl().run_pipeline(self)
+
 
     def run(self, from_step=None):
         os.makedirs(self._output_dir, exist_ok=True)
@@ -170,10 +207,8 @@ class Pipeline:
                     i = j
                     break
 
-        for step in range(i, len(pipeline_steps)):
-            (_, impl) = pipeline_steps[step]
-
-            impl().run_pipeline(self)
+        for idx in range(len(self._input_files)):
+            self._run_file(idx, i)
 
 
 if __name__ == '__main__':
