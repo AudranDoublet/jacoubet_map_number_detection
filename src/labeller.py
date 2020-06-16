@@ -53,18 +53,22 @@ def label_segments(directory_path, output_path, model_path):
     directory_path = Path(directory_path)
     output_path = Path(output_path)
 
+    result = []
+
     # LOADING
     p_annotations, p_segments = get_segments_paths(directory_path)
-    annotations = load_annotations(p_annotations)
-    segments = load_segments_images(p_segments)
 
-    # PREDICTION
-    model = keras.models.load_model(model_path)
-    predictions = model.predict_classes(segments, batch_size=CST_BATCH_SIZE)
+    if len(p_segments) > 0: # FIXME: remove that horrible if
+        annotations = load_annotations(p_annotations)
+        segments = load_segments_images(p_segments)
 
-    assert(len(predictions) == len(annotations))
+        # PREDICTION
+        model = keras.models.load_model(model_path)
+        predictions = model.predict_classes(segments, batch_size=CST_BATCH_SIZE)
 
-    result = generate_result(predictions, annotations)
+        assert(len(predictions) == len(annotations))
+
+        result = generate_result(predictions, annotations)
 
     # DUMP RESULTS
     with output_path.open("w") as fs:
