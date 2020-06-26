@@ -16,36 +16,20 @@ def check_already_done(output_file):
     return os.path.exists(output_file)
 
 
-class DewarpStep:
-    def run(self, input_file, output_file, matrix_output_file, force=False):
+class GridDetectionStep:
+    def run(self, input_file, exterior_file, grid_file, force=False):
         """
         Dewarp input image `input_file` and write result in `output_file`
         """
-        if force or not check_already_done(output_file):
-            dewarp.process_file(input_file, output_file, matrix_output_file)
+        if force or not check_already_done(exterior_file):
+            grid_detection.process_image(input_file, exterior_file, grid_file)
 
 
     def run_pipeline(self, pipeline):
         self.run(
             pipeline.input_file(),
-            pipeline.create_file("dewarp", "01_dewarped.png"),
-            pipeline.create_file("dewarp_matrix", "01_dewarp_matrix.csv")
-        )
-
-
-class GridDetectionStep:
-    def run(self, input_file, output_file, force=False):
-        """
-        Dewarp input image `input_file` and write result in `output_file`
-        """
-        if force or not check_already_done(output_file):
-            grid_detection.process_file(input_file, output_file)
-
-
-    def run_pipeline(self, pipeline):
-        self.run(
-            pipeline.file("dewarp"),
-            pipeline.create_file("grid", "02_grid.png")
+            pipeline.create_file("exterior", "01_exterior.png"),
+            pipeline.create_file("grid", "01_grid.png"),
         )
 
 
@@ -57,22 +41,24 @@ class PreprocessingStep:
 
     def run_pipeline(self, pipeline):
         self.run(
-            pipeline.file("dewarp"),
+            pipeline.input_file(),
             pipeline.create_file("preprocessed", "02_preprocessed.png")
         )
 
 
 class RoadSegmentation:
-    def run(self, input_file, grid_file, output_file, force=False):
+    def run(self, input_file, grid_file, exterior_file, output_file, lines_file, force=False):
         if force or not check_already_done(output_file):
-            road_segmentation.process_file(input_file, grid_file, output_file)
+            road_segmentation.process_file(input_file, grid_file, exterior_file, output_file, lines_file)
 
 
     def run_pipeline(self, pipeline):
         self.run(
             pipeline.file("preprocessed"),
             pipeline.file("grid"),
-            pipeline.create_file("roads", "02_road_mask.png")
+            pipeline.file("exterior"),
+            pipeline.create_file("roads", "02_road_mask.png"),
+            pipeline.create_file("lines", "02_lines.png")
         )
 
 
@@ -108,6 +94,7 @@ class SegmentationStep:
             pipeline.create_file("segments", "04_segments")
         )
 
+
 class LabelingStep:
     def run(self, input_directory, output_file, model_path, force=False):
         labeller.label_segments(input_directory, output_file, model_path)
@@ -119,26 +106,26 @@ class LabelingStep:
             model_path=pipeline.global_file("model")
         )
 
+
 class PostprocessingStep:
-    def run(self, input_file, detection_file, dewarp_matrix_file, output_file, force=False):
-        postprocess.process_file(input_file, detection_file, dewarp_matrix_file, output_file)
+    def run(self, input_file, detection_file, output_file, force=False):
+        postprocess.process_file(input_file, detection_file, output_file)
 
     def run_pipeline(self, pipeline):
         self.run(
             pipeline.input_file(),
             pipeline.file("labels"),
-            pipeline.file("dewarp_matrix"),
             pipeline.global_file("submission"),
         )
 
+
 pipeline_steps = [
-    ('Dewarp',           DewarpStep),
     ('GridDetection',    GridDetectionStep),
     ('Preprocessing',    PreprocessingStep),
     ('RoadSegmentation', RoadSegmentation),
     ('Heatmaps',         HeatmapStep),
     ('Segmentation',     SegmentationStep),
-    ('Labelization',  LabelingStep),
+    ('Labelization',     LabelingStep),
     ('Postprocessing',   PostprocessingStep),
 ]
 
@@ -157,8 +144,6 @@ class Pipeline:
             "model": model_path,
             "submission": os.path.join(output_dir, "submission.csv"),
         }
-
-        self.dewarp_matrix = None
 
 
     def prepare_submission_file(self):

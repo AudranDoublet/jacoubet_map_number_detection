@@ -1,52 +1,29 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
-
-
 import cv2
 import numpy as np
+
 from skimage import io
-from skimage import data
-from skimage import transform
-from skimage.filters import gaussian
-from skimage.measure import ransac
-from skimage.transform import AffineTransform
-from skimage.feature import (match_descriptors, corner_harris, corner_subpix, corner_shi_tomasi, corner_fast,
-                             corner_peaks, ORB, plot_matches)
+from skimage.filters import unsharp_mask, threshold_otsu
 from skimage.color import rgb2gray
 
-
-# In[2]:
-
-
-import skimage
-import skimage.io
-import skimage.segmentation
-
-from skimage import feature
-from skimage import color
-
-from skimage.filters import threshold_otsu
 from skimage.measure import label, regionprops
 
 from skimage.morphology import *
 
-import numpy as np
-
-from scipy.ndimage.morphology import distance_transform_edt
-
-import cv2
-from bresenham import bresenham
+from sklearn.linear_model import LinearRegression, RANSACRegressor
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.pipeline import Pipeline
 
 def otsu_image(image, threshold=0):
     gray = 1 - image
     threshold = threshold_otsu(gray)
 
-    return binary_dilation(gray > threshold)
+    return gray > threshold
 
 
-def find_coords_column(img, nb_colums=5, spacing_threshold=100, line_samples=1000):
+def find_coords_column(img, nb_colums=-1, spacing_threshold=20, line_samples=1000):
     img_part = img[:line_samples,:]
     scores = img_part.sum(axis=0)
     sort_indices = np.argsort(scores)[::-1]
@@ -65,7 +42,7 @@ def find_coords_column(img, nb_colums=5, spacing_threshold=100, line_samples=100
     return sorted(x_coords)
 
 
-def find_coords_row(img, nb_colums=5, spacing_threshold=100, line_samples=1000):
+def find_coords_row(img, nb_colums=-1, spacing_threshold=20, line_samples=1000):
     img_part = img[:,:line_samples]
     scores = img_part.sum(axis=1)
     sort_indices = np.argsort(scores)[::-1]
@@ -84,90 +61,173 @@ def find_coords_row(img, nb_colums=5, spacing_threshold=100, line_samples=1000):
     return sorted(y_coords)
 
 
+def filter_bad_lines(img, threshold=0.1):
+    label_image = label(img)
+
+    for i, region in enumerate(regionprops(label_image)):
+        bbox = region.bbox
+        h = bbox[2] - bbox[0]
+        w = bbox[3] - bbox[1]
+
+        ratio = min(h, w) / max(h, w)
+        box = label_image[bbox[0]:bbox[2],bbox[1]:bbox[3]]
+
+        if ratio > threshold:
+            sm = img[bbox[0]:bbox[2],bbox[1]:bbox[3]]
+            sm[box == i + 1] = 0
+            continue
+
+    return img
 
 
-def find_columns(img, nb_colummns=5, search_radius=5, threshold=0.01):
-    x_coords = find_coords_column(img)
-    columns_coords = []
-    for x in x_coords:
-        x_min, x_max = max(x-search_radius, 0), min(x+search_radius, img.shape[1])
-        column = img[:,x_min:x_max]
-        column_indices = np.argmax(column, axis=1)
-        column_coords = []
-        for y in range(column.shape[0]):
-            column_best_x = column_indices[y]
-            if column[y, column_best_x] < threshold:
-                continue
-            column_coords.append((y, x_min + column_best_x))
-        columns_coords.append(column_coords) 
+def line_seems_valid(image, rr, cc):
+    mask = np.zeros(image.shape)
+    mask[rr, cc] = 255
+    mask = mask > 0
 
-    return columns_coords
+    black_count = np.sum(image[mask] < 0.7)
+    total_count = np.sum(mask)
+
+    return black_count / total_count > 0.4
 
 
-def find_rows(img, nb_rows=5, search_radius=5, threshold=0.01):
-    y_coords = find_coords_row(img)
+def learn(X, y, pol_degree):
+    try:
+        model = Pipeline([('poly', PolynomialFeatures(degree=pol_degree)),
+                          ('linear', RANSACRegressor())])
+        model.fit(X, y)
+    except:
+        model = Pipeline([('poly', PolynomialFeatures(degree=pol_degree)),
+                          ('linear', LinearRegression())])
+        model.fit(X, y)
 
-    rows_coords = []
-    for y in y_coords:
-        y_min, y_max = max(y-search_radius, 0), min(y+search_radius, img.shape[0])
-        row = img[y_min:y_max,:]
-        row_indices = np.argmax(row, axis=0)
-        row_coords = []
-        for x in range(row.shape[1]):
-            row_best_y = row_indices[x]
-            if row[row_best_y, x] < threshold:
-                continue
-            row_coords.append((y_min + row_best_y, x))
-        rows_coords.append(row_coords) 
-        
-    return rows_coords
+    return model
 
 
-def generate_rows_mask(img, columns, line_width=2):
-    mask = np.zeros_like(img)
-    for c in columns:
-        p0 = c[0]
-        column_pixels = []
-        for p1 in c:
-            for pk in bresenham(p0[1], p0[0], p1[1], p1[0]):
-                mask[pk[1]-line_width:pk[1]+line_width, pk[0]] = 1.0
-            p0 = p1
-    return mask
-def generate_columns_mask(img, columns, line_width=2):
-    mask = np.zeros_like(img)
-    for c in columns:
-        p0 = c[0]
-        column_pixels = []
-        for p1 in c:
-            for pk in bresenham(p0[1], p0[0], p1[1], p1[0]):
-                mask[pk[1], pk[0]-line_width:pk[0]+line_width] = 1.0
-            p0 = p1
-    return mask
+def curvature(original, rr, cc):
+    mask = np.zeros(original.shape)
+    mask[rr, cc] = 255
+    mask = mask > 0
+
+    black_count = np.sum(original[mask] < 0.7)
+    total_count = np.sum(mask)
+
+    return total_count / black_count
 
 
-def process_file(inputFile, outputFile):
-    print(f"Get {inputFile} lines")
+def curvature_filter(original, arr, spacing_threshold=200):
+    arr = list(arr)
 
-    image = rgb2gray(skimage.io.imread(inputFile))
-    binary = remove_small_objects(otsu_image(image), 5000)
+    cvts = np.array([curvature(original, rr, cc) for _, rr, cc in arr])
+    result = []
 
-    img = binary_closing(binary, square(10))
-    img = remove_small_holes(img, 100000)
+    known_pos = []
+
+    for i in np.argsort(cvts):
+        pos, rr, cc = arr[i]
+
+        if np.sum(np.abs(known_pos - pos) < spacing_threshold) > 0:
+            continue
+
+        known_pos = np.append(known_pos, [pos])
+        result.append([rr, cc])
+
+    return np.array(result)[np.argsort(known_pos)]
 
 
-    c = 20
-    im = (dilation(image, np.array([[1]*c])) < 0.7) | (dilation(image, np.array([[1]]*c)) < 0.7)
-    im = closing(im, square(10))
+def get_columns(original, img, context_width=50, pol_degree=3):
+    for column in find_coords_column(img):
+        m_x = max(0, column - context_width)
+        pix = img[:,m_x:column+context_width]
 
-    mask_columns = generate_columns_mask(im, find_columns(im, search_radius=20, threshold=0), line_width=4)
-    mask_rows = generate_rows_mask(im, find_rows(im, search_radius=20, threshold=0), line_width=4)
+        non_z = cv2.findNonZero(pix * 255)
 
-    result = ((mask_columns > 0.5) | (mask_rows > 0.5)) * 255
+        if non_z is None or non_z.shape[0] < 50:
+            continue
 
-    w = 50
-    result[:w,:] = 0
-    result[-w:,:] = 0
-    result[:,:w] = 0
-    result[:,-w:] = 0
+        non_z = non_z.reshape(-1, 2)
+        model = learn(non_z[:,1].reshape(-1, 1), non_z[:,0], pol_degree)
 
-    skimage.io.imsave(outputFile, result)
+        rr = np.array([i for i in range(img.shape[0])]).astype(np.int32)
+        cc = model.predict(rr.reshape(-1, 1)).astype(np.int32) + m_x
+
+        cc[cc < 0] = 0
+        cc[cc >= original.shape[1]] = original.shape[1] - 1
+
+        if line_seems_valid(original, rr, cc):
+            yield (column, rr, cc)
+
+
+def get_rows(original, img, context_width=50, pol_degree=3):
+    for row in find_coords_row(img):
+        m_y = max(0, row - context_width)
+        pix = img[m_y:row+context_width,:]
+
+        non_z = cv2.findNonZero(pix * 255)
+
+        if non_z is None or non_z.shape[0] < 50:
+            continue
+
+        non_z = non_z.reshape(-1, 2)
+
+        model = learn(non_z[:,0].reshape(-1, 1), non_z[:,1], pol_degree)
+
+        cc = np.array([i for i in range(img.shape[1])]).astype(np.int32)
+        rr = model.predict(cc.reshape(-1, 1)).astype(np.int32) + m_y
+
+        rr[rr < 0] = 0
+        rr[rr >= original.shape[0]] = original.shape[0] - 1
+
+        if line_seems_valid(original, rr, cc):
+            yield (row, rr, cc)
+
+
+def prefilter(image):
+    img = otsu_image(image)
+    img = img ^ ((img ^ remove_small_objects(img, 50000)) | (remove_small_objects(img, 1000000)))
+    img = binary_dilation(filter_bad_lines(img, threshold=0.3))
+
+    filtred_img = image.copy()
+    filtred_img[img] = 1
+
+    filtred_img = unsharp_mask(filtred_img, radius=5, amount=3)
+    c = 50
+
+    lin_img = filter_bad_lines(dilation(filtred_img, np.array([[1]*c])) < 0.7)
+    lin_img = filter_bad_lines(closing(lin_img, square(10)))
+
+    col_img = filter_bad_lines(dilation(filtred_img, np.array([[1]]*c)) < 0.7)
+    col_img = filter_bad_lines(closing(col_img, square(10)))
+
+    return lin_img, col_img
+
+
+def process_image(inputFile, exteriorFile, gridFile):
+    image = rgb2gray(io.imread(inputFile))
+    lin_img, col_img = prefilter(image)
+
+    cols = list(curvature_filter(image, get_columns(image, col_img)))
+    rows = list(curvature_filter(image, get_rows(image, lin_img)))
+
+    # external border masks
+    borders = np.zeros(image.shape)
+
+    for rr, cc in [cols[0], cols[-1], rows[0], rows[-1]]:
+        borders[rr, cc] = 255
+
+    # exterior mask
+    exterior = borders.copy()
+    exterior = remove_small_holes(exterior > 0, 5000000)*255 - borders
+    exterior = binary_closing(exterior > 0) * 255
+
+    # internal grid mask
+    grid = np.zeros(image.shape)
+
+    for rr, cc in (cols[1:-1] + rows[1:-1]):
+        grid[rr, cc] = 255
+
+    grid = dilation(grid, disk(2))
+    grid[exterior == 255] = 0
+
+    io.imsave(exteriorFile, exterior.astype(np.uint8))
+    io.imsave(gridFile, grid.astype(np.uint8))
