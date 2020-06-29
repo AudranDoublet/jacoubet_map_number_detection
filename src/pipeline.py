@@ -9,6 +9,7 @@ import heatmaps
 import postprocess
 import segmentation
 import labeller
+import debug
 
 logger = structlog.get_logger()
 
@@ -118,6 +119,18 @@ class PostprocessingStep:
             pipeline.global_file("submission"),
         )
 
+class DebugStep:
+    def run(self, input_file, detection_file, output_file, force=False):
+        debug.process_file(input_file, detection_file, output_file)
+
+    def run_pipeline(self, pipeline):
+        self.run(
+            pipeline.input_file(),
+            pipeline.file("labels"),
+            pipeline.create_file("debug", "06_debug.png"),
+        )
+
+
 
 pipeline_steps = [
     ('GridDetection',    GridDetectionStep),
@@ -127,6 +140,7 @@ pipeline_steps = [
     ('Segmentation',     SegmentationStep),
     ('Labelization',     LabelingStep),
     ('Postprocessing',   PostprocessingStep),
+    ('Debug',            DebugStep),
 ]
 
 class Pipeline:

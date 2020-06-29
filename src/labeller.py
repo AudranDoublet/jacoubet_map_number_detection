@@ -44,7 +44,8 @@ def generate_result(predictions, annotations):
 
         result.append({
             "label": int(c),
-            "coords": [y0+(y1-y0)//2, x0+(x1-x0)//2]
+            "coords": [y0+(y1-y0)//2, x0+(x1-x0)//2],
+            "bbox": annotations[i]["bbox"]
         })
 
     return result
