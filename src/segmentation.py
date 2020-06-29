@@ -131,10 +131,10 @@ def get_objects_old(img):
     From an image containing all the objects, return a list of image with a single object
     """
     tmp_img = np.copy(img) # to avoid modifying the original
-    
+
     # list of objects
     objs = []
-    
+
     def get_object(img, obj, i, j):
         # out of bounds
         if j >= img.shape[0] or j < 0:
@@ -248,6 +248,245 @@ def process(img, marked, elt = skimage.morphology.disk(1), inversed=True, ret_pr
     return turned
 
 
+class Properties:
+    """
+    Create properties by hand because we can to change some attributes
+    """
+    def __init__(self, label, minor_axis_length, major_axis_length, orientation, corner_x, corner_y):
+        self.label = label
+        self.bbox = None
+        self.minor_axis_length = minor_axis_length
+        self.major_axis_length = major_axis_length
+        self.centroid = None
+        self.orientation = orientation
+
+        self.corner_x = corner_x
+        self.corner_y = corner_y
+
+    def update_bbox(self, old):
+        self.bbox = (
+            old[0] + self.corner_y,
+            old[1] + self.corner_x,
+            old[2] + self.corner_y,
+            old[3] + self.corner_x
+        )
+
+    def update_centroid(self, old):
+        self.centroid = (
+            old[0] + self.corner_y,
+            old[1] + self.corner_x
+        )
+
+
+def add_result(img_res, nb_pixels, results, properties):
+    """
+    Add result only if good cut:
+     - into 2 objects
+     - good proportions
+    """
+    copy = np.copy(img_res)
+    objects, tmp_properties = get_objects(img_res, ret_props=True)
+    if len(objects) != 2: # if not 2 objects: bad cut
+        return
+
+    def get_proportions(new_objs):
+        obj1_nb_white = np.count_nonzero(new_objs[0])
+        obj2_nb_white = np.count_nonzero(new_objs[1])
+        div = obj1_nb_white / obj2_nb_white
+        return div
+
+    prop = get_proportions(objects)
+    if prop <= 2 and prop >= 1/2: # good proportions
+        res = {}
+        # save the proportions
+        res["prop"] = prop
+        # save the number of cut pixels
+        res["white_to_black"] = nb_pixels
+        # save the results
+        res["objects"] = objects
+        res["image"] = copy
+
+        results.append((res, properties, tmp_properties))
+
+def pick_results(results, nb_labels):
+    """
+    Choose the best result:
+     - less changed pixels (minimum cut)
+     - best proportion if same cut
+    """
+    if len(results) == 0:
+        return [], None
+
+    best_res = 0
+    min_cut = results[0][0]["white_to_black"]
+    best_prop = results[0][0]["prop"]
+
+    for i in range(1, len(results)):
+        if min_cut > results[i][0]["white_to_black"] or \
+         (min_cut == results[i][0]["white_to_black"] and abs(best_prop - 1) > abs(results[i][0]["prop"] - 1)):
+            min_cut = results[i][0]["white_to_black"]
+            best_res = i
+
+    # we use in postprocess: prop.bbox, minor_axis_length, major_axis_length, centroid, orientation
+
+    res, old_prop, properties = results[best_res]
+
+    top_y = old_prop.bbox[0]
+    top_x = old_prop.bbox[1]
+
+    # label of first object in cut = same as object before cut
+    new_properties1 = Properties(
+        old_prop.label,
+        properties[0].minor_axis_length,
+        properties[0].major_axis_length,
+        properties[0].orientation,
+        top_x,
+        top_y
+    )
+    # new label for the second object
+    new_properties2 = Properties(
+        nb_labels + 1,
+        properties[1].minor_axis_length,
+        properties[1].major_axis_length,
+        properties[1].orientation,
+        top_x,
+        top_y
+    )
+
+    # update the bbox to global image coords
+    new_properties1.update_bbox(properties[0].bbox)
+    new_properties2.update_bbox(properties[1].bbox)
+
+    # update the bbox to global image coords
+    new_properties1.update_centroid(properties[0].centroid)
+    new_properties2.update_centroid(properties[1].centroid)
+
+    return res["objects"], [new_properties1, new_properties2]
+
+
+def cut_image(original_img, prop, nb_labels):
+    # un overlap
+
+    height, width = original_img.shape
+    # cut the object with a line
+    bounds_a = (-10, 10) # orientation of the line
+    bounds_b = (0, 2 * width // 3) # x axis and y axis
+
+    results = []
+
+    # a negative
+    for a in range(bounds_a[0], 0, 1):
+        origin = 0
+
+        for b in range(bounds_b[0], bounds_b[1]): # top bound
+            # copy the image to not modify it
+            tmp = np.copy(original_img)
+
+            nb_pixels = 0
+
+            # draw line <=> set white pixels to black
+            for x_0 in range(0, width - b):
+                y = origin - a * x_0
+                x = x_0 + b
+
+                y2 = origin - (a * (x_0 + 1))
+
+                yend = min(y2, height)
+
+                while y < yend:
+                    if tmp[y][x]:
+                        tmp[y][x] = 0
+                        nb_pixels += 1
+                    y += 1
+
+            add_result(tmp, nb_pixels, results, prop)
+
+    # a positive
+    for a in range(0, bounds_a[1], 1):
+        origin = height - 1
+
+        for b in range(bounds_b[0], bounds_b[1]): # bottom bound
+            # copy the image to not modify it
+            tmp = np.copy(original_img)
+
+            nb_pixels = 0
+
+            # draw line <=> set white pixels to black
+            for x_0 in range(0, width):
+                y = origin - a * x_0
+                x = x_0 + b
+
+                if x >= width:
+                    break
+
+                y2 = origin - a * (x_0 + 1)
+
+                yend = max(y2, 0)
+
+                while y > yend:
+                    if not tmp[y][x]:
+                        tmp[y][x] = 0
+                        nb_pixels += 1
+                    y -= 1
+
+            add_result(tmp, nb_pixels, results, prop)
+
+    return pick_results(results, nb_labels)
+
+def multiples_to_singles(singles, original_imgs, props, m_props):
+    """
+    from list of single images and list of multiple images
+    return all images as single number
+    """
+    # total nb images
+    length = len(singles) + len(original_imgs)
+
+    tmp = []
+    tmp_props = []
+    for i, img in enumerate(original_imgs):
+        # try to cut
+        res, res_props = cut_image(img, m_props[i], length)
+        if res: # success
+            tmp.extend(res)
+            tmp_props.extend(res_props)
+            length += 1
+        else: # fail to cut
+            tmp.append(img)
+            tmp_props.append(m_props[i])
+
+    # check ~ same shape
+    height = 0
+    width = 0
+    for img in singles + tmp:
+        height += img.shape[0]
+        width += img.shape[1]
+    height /= length
+    width /= length
+
+    while len(tmp) > 0:
+        # if too large: multiple numbers
+        if tmp[0].shape[0] > 1.25 * height or tmp[0].shape[1] > 1.25 * width:
+            # try to cut
+            res, res_props = cut_image(tmp[0], tmp_props[0], length)
+            if res: # success
+                tmp.extend(res)
+                tmp_props.extend(res_props)
+                length += 1
+            else: # fail to cut
+                singles.append(tmp[0])
+                props.append(tmp_props[0])
+
+        else:
+            singles.append(tmp[0])
+            props.append(tmp_props[0])
+
+        # pop image from queue
+        tmp = tmp[1:]
+        tmp_props = tmp_props[1:]
+
+    return singles, props
+
+
 import skimage.color
 import json
 
@@ -268,6 +507,10 @@ def process_from_heatmaps(inputFile, roadFile, outputFile):
     rectangles = create_rectangles_from_heatmap(heatmap)
 
     images, props = process(heatmap, None, ret_props=True)
+
+    # cut multiple images to single one
+    singles, multis, single_prop, mult_prop = extract_single_numbers(images, props)
+    images, props = multiples_to_singles(singles, multis, single_prop, mult_prop)
 
     import os
     os.makedirs(outputFile, exist_ok=True)
