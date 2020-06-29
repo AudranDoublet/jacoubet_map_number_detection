@@ -186,7 +186,7 @@ def show_images(objects, col=5):
 
 
 # filtrer: prendre uniquement les images avec un seul nombre (fonctionne uniquement si une majorité de nombres simples)
-def extract_single_numbers(images):
+def extract_single_numbers(images, properties=None):
     # compute mean of shapes
     shapes = [arr.shape for arr in images]
     mean_shape = np.mean(shapes, axis=0)
@@ -194,14 +194,18 @@ def extract_single_numbers(images):
     # apply filter
     k = mean_shape / 2
     singles, multiples = [], []
-    for obj in images:
+    singles_prop, multiples_prop = [], []
+    for i, obj in enumerate(images):
         if (mean_shape[0] - k[0] <= obj.shape[0] and obj.shape[0] <= mean_shape[0] + k[0] and mean_shape[1] - k[1] <= obj.shape[1] and obj.shape[1] <= mean_shape[1] + k[1]):
             singles.append(obj)
+            if properties:
+                singles_prop.append(properties[i])
         else:
             multiples.append(obj)
+            if properties:
+                multiples_prop.append(properties[i])
 
-    return singles, multiples
-
+    return singles, multiples, singles_prop, multiples_prop
 
 def turn_image(img): # turn if 3/4 * x > y
     if img.shape[0] < img.shape[1] * 0.75:
