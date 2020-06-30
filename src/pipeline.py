@@ -130,6 +130,17 @@ class DebugStep:
             pipeline.create_file("debug", "06_debug.png"),
         )
 
+class DebugSegmentationStep:
+    def run(self, input_file, annotation_dir, output_file, force=False):
+        debug.show_boxes(input_file, annotation_dir, output_file)
+
+    def run_pipeline(self, pipeline):
+        self.run(
+            pipeline.file("heatmaps"),
+            pipeline.file("segments"),
+            pipeline.create_file("debug_seg", "04_debug.png"),
+        )
+
 
 
 pipeline_steps = [
@@ -141,6 +152,7 @@ pipeline_steps = [
     ('Labelization',     LabelingStep),
     ('Postprocessing',   PostprocessingStep),
     ('Debug',            DebugStep),
+    ('DebugSegmentation',DebugSegmentationStep),
 ]
 
 class Pipeline:

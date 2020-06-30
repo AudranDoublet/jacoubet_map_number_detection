@@ -4,6 +4,7 @@ import sys
 
 import skimage.io
 from PIL import ImageFont, ImageDraw, Image
+from pathlib import Path
 
 def save_debug_image(image_path, detections, output_file):
     img = Image.open(image_path)
@@ -28,11 +29,41 @@ def save_debug_image(image_path, detections, output_file):
 
     img.save(output_file)
 
-
-
+# At the end of the pipeline
 def process_file(input_file, detection_file, output_file):
+    """
+    For each object: draw rectangles around bbox + show the result of algo
+    """
     print(f'Debug {input_file}')
     with open(detection_file) as f:
         detections = json.load(f)
 
         save_debug_image(input_file, detections, output_file)
+
+
+# After segmentation part
+def show_boxes(input_file, detection_directory, output_file):
+    """
+    Draw rectangles for each bbox objects, after segementation step
+    """
+    print(f'Debug Segmentation {input_file}')
+
+    def get_annotation_files(directory):
+        return sorted(
+            directory.glob("*.json"),
+            key=lambda path: path.name.split('.')[0]
+        )
+
+    def get_bbox(annotation_path):
+        with annotation_path.open("r") as f:
+            return json.load(f)["bbox"]
+
+    img = Image.open(input_file)
+    draw = ImageDraw.Draw(img)
+
+    for annot in get_annotation_files(Path(detection_directory)):
+        bbox = get_bbox(annot)
+        box = [bbox[1], bbox[0], bbox[3], bbox[2]]
+        draw.rectangle(box, outline=150)
+
+    img.save(output_file)

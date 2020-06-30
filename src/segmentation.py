@@ -192,7 +192,7 @@ def extract_single_numbers(images, properties=None):
     mean_shape = np.mean(shapes, axis=0)
 
     # apply filter
-    k = mean_shape / 2
+    k = mean_shape * 2 / 3
     singles, multiples = [], []
     singles_prop, multiples_prop = [], []
     for i, obj in enumerate(images):
@@ -469,7 +469,7 @@ def multiples_to_singles(singles, original_imgs, props, m_props):
 
     while len(tmp) > 0:
         # if too large: multiple numbers
-        if tmp[0].shape[0] > 1.25 * height or tmp[0].shape[1] > 1.25 * width:
+        if tmp[0].shape[0] > 1.5 * height or tmp[0].shape[1] > 1.5 * width:
             # try to cut
             res, res_props = cut_image(tmp[0], tmp_props[0], length)
             if res: # success
