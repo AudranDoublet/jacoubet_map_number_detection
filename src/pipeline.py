@@ -10,6 +10,7 @@ import postprocess
 import segmentation
 import labeller
 import debug
+import merge
 
 logger = structlog.get_logger()
 
@@ -108,6 +109,17 @@ class LabelingStep:
         )
 
 
+class MergeStep:
+    def run(self, label_file, output_file, force=False):
+        merge.process(label_file, output_file)
+
+    def run_pipeline(self, pipeline):
+        self.run(
+            pipeline.file("labels"),
+            pipeline.create_file("merge_labels", "06_merged_labels.json"),
+        )
+
+
 class PostprocessingStep:
     def run(self, input_file, detection_file, output_file, force=False):
         postprocess.process_file(input_file, detection_file, output_file)
@@ -115,7 +127,7 @@ class PostprocessingStep:
     def run_pipeline(self, pipeline):
         self.run(
             pipeline.input_file(),
-            pipeline.file("labels"),
+            pipeline.file("merge_labels"),
             pipeline.global_file("submission"),
         )
 
@@ -126,7 +138,7 @@ class DebugStep:
     def run_pipeline(self, pipeline):
         self.run(
             pipeline.input_file(),
-            pipeline.file("labels"),
+            pipeline.file("merge_labels"),
             pipeline.create_file("debug", "06_debug.png"),
         )
 
@@ -150,6 +162,7 @@ pipeline_steps = [
     ('Heatmaps',         HeatmapStep),
     ('Segmentation',     SegmentationStep),
     ('Labelization',     LabelingStep),
+    ('MergeNumbers',     MergeStep),
     ('Postprocessing',   PostprocessingStep),
     ('Debug',            DebugStep),
     ('DebugSegmentation',DebugSegmentationStep),
