@@ -2,121 +2,133 @@ import numpy as np
 import cv2
 import os
 
-import skimage
-import skimage.io
-
-from skimage.filters import threshold_otsu, threshold_sauvola, inverse
-from skimage.color import rgb2gray
-from skimage.measure import label, regionprops
-
-from skimage.morphology import *
-
+from skimage.io import *
+from skimage.color import *
+from skimage.filters import *
+from skimage.morphology import * 
+from skimage.transform import *
+from skimage.feature import *
+from skimage.measure import *
+from skimage.draw import line_aa
+from skimage import data
 from scipy.ndimage.morphology import distance_transform_edt
 
-def otsu_image(image):
+def binary_image(image):
     gray = 1 - image
     threshold = threshold_otsu(gray)
-
-    return binary_dilation(gray > threshold)
-
-
-def binary_image(image):
-    gray = 1 - rgb2gray(image)
-
-    threshold = threshold_sauvola(gray, window_size=25, k=0.05)
     binary = gray > threshold
-    binary = binary * 255 - remove_small_objects(binary, 400) * 255
     return binary > 0
 
+def area_ecc_filter(im, area_bounds, ecc_bounds, ext_bounds=(0.0, 1.0)):
+    # Extract the region props of the objects. 
+    props = regionprops(im)
+    
+    # Extract the areas and labels.
+    areas = np.array([prop.area for prop in props])
+    eccs = np.array([prop.eccentricity for prop in props])
+    labels = np.array([prop.label for prop in props])
+    extents = np.array([prop.extent for prop in props])
+    
+    # Make an empty image to add the approved cells.
+    im_approved = np.zeros_like(im)
+    
+    # Threshold the objects based on area and eccentricity
+    for i, _ in enumerate(areas):
+        if areas[i] > area_bounds[0] and areas[i] < area_bounds[1]\
+            and eccs[i] > ecc_bounds[0] and eccs[i] < ecc_bounds[1]\
+            and extents[i] > ext_bounds[0] and extents[i] < ext_bounds[1]:
+                im_approved += im==labels[i]
 
-def filter_results_simple(denoised, small, road_mask):
-    distance_map = distance_transform_edt(road_mask)
+    return im_approved > 0
+ 
+def im_detect_lines(im, gaussian_sigma=2.5, small_object_size=1024):
+    im = gaussian(im, gaussian_sigma)
+    im = canny(im)
+    im = dilation(im)
+    im = remove_small_objects(im > 0.1, small_object_size)
+    return im
 
-    label_image = label(small)
+def im_dilate(im, gaussian_sigma=2):
+    im = gaussian(im, gaussian_sigma)
+    im = binary_image(im)
+    im = binary_dilation(im, disk(5))
+    return im
 
-    for i, region in enumerate(regionprops(label_image)):
-        bbox = region.bbox
-        ratio = region.minor_axis_length / region.major_axis_length
-        box = label_image[bbox[0]:bbox[2],bbox[1]:bbox[3]]
+def im_detect_grid(im, dilation_selem=disk(2), line_length=500, line_gaps=30):
+    im = binary_image(im)
+    im = binary_dilation(im, dilation_selem)
 
-        if ratio < 0.25 or region.minor_axis_length < 4:
-            sm = small[bbox[0]:bbox[2],bbox[1]:bbox[3]]
-            sm[box == i + 1] = 0
+    lines = probabilistic_hough_line(im, line_length=line_length, line_gap=line_gaps)
+    grid_mask = np.zeros_like(im, dtype=np.bool)
+
+    for p0, p1 in lines:
+        # ignore diagonal lines
+        a = (p1[0]-p0[0]) / ((p1[1]-p0[1]) or float('nan'))
+        if abs(a) > 1e-1:
             continue
 
-        lbl = denoised[bbox[0]:bbox[2],bbox[1]:bbox[3]][box == i + 1]
+        rr, cc, val = line_aa(*p0[::-1], *p1[::-1])
+        grid_mask[rr, cc] = True
 
-        total_count = lbl.shape[0]
-        black_count = np.sum(lbl <= 0.5)# - total_count / 3
+    return grid_mask
 
-        total_square_count = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
-        active_square_count = np.sum(box == i + 1)
+def im_detect_lines_area(lines, valid_area=50):
+    lines = 1-lines
+    im = -distance_transform_edt(lines)
+    return im > -valid_area
 
-        if black_count / total_count < 0.1 or active_square_count / total_square_count < 0.2:
-            sm = small[bbox[0]:bbox[2],bbox[1]:bbox[3]]
-            sm[box == i + 1] = 0
-            continue
+def im_detect_blobs(im):
+    # im = rgb2gray(cv2.fastNlMeansDenoising(im))
+    im = rgb2gray(im)
 
-        non_road_count = np.sum(road_mask[bbox[0]:bbox[2],bbox[1]:bbox[3]][box == i + 1])
+    # remove the grid from the image
+    mask_grid = im_detect_grid(im)
+    im[mask_grid] = im.max()
 
-        # if objet is on road, ignore it
-        if non_road_count / total_count < 0.9:
-            sm = small[bbox[0]:bbox[2],bbox[1]:bbox[3]]
-            sm[box == i + 1] = 0
-            continue
+    # detect lines
+    mask_lines = im_detect_lines(im, 2.3)
+    mask_available_area = im_detect_lines_area(mask_lines, 45)
 
-        road_distances =  distance_map[bbox[0]:bbox[2],bbox[1]:bbox[3]][box == i + 1]
+    # dilate and cut dilated blobs according to the previously detected bounding lines
+    im = im_dilate(im)
+    im &= mask_available_area
+    im &= ~mask_lines
 
-        if np.min(road_distances) > 20 or np.min(road_distances) < 1 + 1e-3:
-            sm = small[bbox[0]:bbox[2],bbox[1]:bbox[3]]
-            sm[box == i + 1] = 0
-            continue
+    # filter non-viable blobs
+    im = erosion(im, star(3))
+    im = area_ecc_filter(label(im), (50, 1000), (0., 1.0), (0.3, 1.0))
 
-    return small
+    return im
+
+def im_remove_small_aligned_objects(im, line_length=200, line_gap=25, threshold_size=128):
+    # FIXME: - it'd be better to filter the image to have only small objects, 
+    #          so we can decrease `line_length`, and increase `line_gap`
+    # FIXME-END
+    im = im.copy() # that's slow and useless, but it avoids modifying the image given by reference
+
+    lines = probabilistic_hough_line(im, line_length=line_length, line_gap=line_gap)
+    mask_lines = np.zeros_like(im, dtype=np.bool)
+
+    # we draw a line joining the small objects of the image
+    for p0, p1 in lines:
+        rr, cc, val = line_aa(*p0[::-1], *p1[::-1])
+        mask_lines[rr, cc] = True
+
+    im[mask_lines] = 0
+    return remove_small_objects(im > 0, threshold_size)
 
 
-def filter_results_connex(binary_otsu, small):
-    closed_small = dilation(small, square(30))
+def process_image(im, _road_mask):
+    im = im_detect_blobs(im)
+    im = im_remove_small_aligned_objects(im)
 
-    im = (binary_otsu*255 - small) > 0
-    closed_small[im > 0] = False
-    closed_small = closed_small > 0
-    closed_small = remove_small_holes(closed_small, 1000)
-
-    closed_small = remove_small_objects(closed_small, 1000)*255 - remove_small_objects(closed_small, 10000)*255
-
-    label_image = label(closed_small)
-
-    for i, region in enumerate(regionprops(label_image)):
-        bbox = region.bbox
-        box = label_image[bbox[0]:bbox[2],bbox[1]:bbox[3]]
-
-        ratio = region.minor_axis_length / region.major_axis_length
-
-        if ratio < 0.4:
-            sm = closed_small[bbox[0]:bbox[2],bbox[1]:bbox[3]]
-            sm[box == i + 1] = 0
-
-    return closed_small
-
-def process_image(image, road_mask):
-    denoised = rgb2gray(cv2.fastNlMeansDenoising(image))
-    binary_otsu = otsu_image(denoised)
-    binary = binary_image(denoised)
-
-    # conserve only objects of the size of a number
-    small = (remove_small_objects(binary, 5) * 255) - (remove_small_objects(binary, 400) * 255)
-    small = filter_results_simple(denoised, small, road_mask)
-    closed_small = filter_results_connex(binary_otsu, small)
-
-    return np.bitwise_and(closed_small > 0, small > 0) * 255
-
+    return im
 
 def process_file(inputFile, roadFile, outputFile):
     print(f"Get {inputFile} heatmaps")
 
-    image = skimage.io.imread(inputFile)
-    road_mask = skimage.io.imread(roadFile)
+    image = imread(inputFile)
+    road_mask = imread(roadFile)
     result = process_image(image, road_mask)
 
-    skimage.io.imsave(outputFile, result)
+    imsave(outputFile, result)
