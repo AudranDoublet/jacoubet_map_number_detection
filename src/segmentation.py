@@ -256,12 +256,13 @@ class Properties:
     """
     Create properties by hand because we can to change some attributes
     """
-    def __init__(self, label, minor_axis_length, major_axis_length, orientation, corner_x, corner_y):
+    def __init__(self, label, merge_id, minor_axis_length, major_axis_length, orientation, corner_x, corner_y, bbox=None, centroid=None):
         self.label = label
-        self.bbox = None
+        self.merge_id = merge_id,
+        self.bbox = bbox
         self.minor_axis_length = minor_axis_length
         self.major_axis_length = major_axis_length
-        self.centroid = None
+        self.centroid = centroid
         self.orientation = orientation
 
         self.corner_x = corner_x
@@ -280,6 +281,21 @@ class Properties:
             old[0] + self.corner_y,
             old[1] + self.corner_x
         )
+
+
+def regionprop_to_properties(region_prop):
+    """Convert skimage.RegionProp to Properties
+    """
+    return Properties(label=region_prop.label,
+                      merge_id=region_prop.label[0],
+                      minor_axis_length=region_prop.minor_axis_length,
+                      major_axis_length=region_prop.major_axis_length,
+                      orientation=region_prop.orientation,
+                      corner_x=region_prop.bbox[0],
+                      corner_y=region_prop.bbox[1],
+                      bbox=region_prop.bbox,
+                      centroid=region_prop.centroid
+                      )
 
 
 def add_result(img_res, nb_pixels, results, properties):
@@ -341,6 +357,7 @@ def pick_results(results, nb_labels):
     # label of first object in cut = same as object before cut
     new_properties1 = Properties(
         old_prop.label,
+        old_prop.label[0],
         properties[0].minor_axis_length,
         properties[0].major_axis_length,
         properties[0].orientation,
@@ -350,6 +367,7 @@ def pick_results(results, nb_labels):
     # new label for the second object
     new_properties2 = Properties(
         nb_labels + 1,
+        old_prop.label[0],
         properties[1].minor_axis_length,
         properties[1].major_axis_length,
         properties[1].orientation,
@@ -496,6 +514,7 @@ import json
 
 def props_to_dict(props, angle):
     return {
+        'merge_id': props.merge_id,
         'bbox': props.bbox,
         'angle': angle,
         'minor_axis_length': props.minor_axis_length,
@@ -515,6 +534,7 @@ def process_from_heatmaps(inputFile, roadFile, outputFile):
     # cut multiple images to single one
     singles, multis, single_prop, mult_prop = extract_single_numbers(images, props)
     images, props = multiples_to_singles(singles, multis, single_prop, mult_prop)
+    props = list(map(lambda rp: regionprop_to_properties(rp), props))
 
     import os
     os.makedirs(outputFile, exist_ok=True)
