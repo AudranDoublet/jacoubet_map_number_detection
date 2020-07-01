@@ -258,7 +258,7 @@ class Properties:
     """
     def __init__(self, label, merge_id, minor_axis_length, major_axis_length, orientation, corner_x, corner_y, bbox=None, centroid=None):
         self.label = label
-        self.merge_id = merge_id,
+        self.merge_id = merge_id
         self.bbox = bbox
         self.minor_axis_length = minor_axis_length
         self.major_axis_length = major_axis_length
@@ -282,12 +282,14 @@ class Properties:
             old[1] + self.corner_x
         )
 
-
 def regionprop_to_properties(region_prop):
     """Convert skimage.RegionProp to Properties
     """
+    if isinstance(region_prop, Properties):
+        return region_prop
+
     return Properties(label=region_prop.label,
-                      merge_id=region_prop.label[0],
+                      merge_id=region_prop.label,
                       minor_axis_length=region_prop.minor_axis_length,
                       major_axis_length=region_prop.major_axis_length,
                       orientation=region_prop.orientation,
@@ -354,10 +356,14 @@ def pick_results(results, nb_labels):
     top_y = old_prop.bbox[0]
     top_x = old_prop.bbox[1]
 
+    merge_id = old_prop.label
+    if isinstance(old_prop, Properties):
+        merge_id = old_prop.merge_id
+
     # label of first object in cut = same as object before cut
     new_properties1 = Properties(
         old_prop.label,
-        old_prop.label[0],
+        merge_id,
         properties[0].minor_axis_length,
         properties[0].major_axis_length,
         properties[0].orientation,
@@ -367,7 +373,7 @@ def pick_results(results, nb_labels):
     # new label for the second object
     new_properties2 = Properties(
         nb_labels + 1,
-        old_prop.label[0],
+        merge_id,
         properties[1].minor_axis_length,
         properties[1].major_axis_length,
         properties[1].orientation,
