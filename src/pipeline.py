@@ -2,7 +2,6 @@ import os
 import sys
 import structlog
 
-import dewarp
 import grid_detection
 import road_segmentation
 import heatmaps
