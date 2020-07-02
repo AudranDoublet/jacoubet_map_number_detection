@@ -112,7 +112,6 @@ def dist_map(binary, exterior):
         label_filter = label_box == reg.label
 
         if dists_box[label_filter].shape[0] == 0:
-            print(i+1, np.unique(label_box))
             continue
         
         h = bbox[2] - bbox[0]
@@ -237,4 +236,4 @@ def process_file(inputFile, gridFile, exteriorFile, outputFile):
     result = remove_small_holes(result, 10000)
     result = binary_closing(result, disk(3))
 
-    skimage.io.imsave(outputFile, result*255)
+    skimage.io.imsave(outputFile, (result*255).astype(np.uint8))

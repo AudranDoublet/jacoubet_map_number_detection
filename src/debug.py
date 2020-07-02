@@ -34,7 +34,6 @@ def process_file(input_file, detection_file, output_file):
     """
     For each object: draw rectangles around bbox + show the result of algo
     """
-    print(f'Debug {input_file}')
     with open(detection_file) as f:
         detections = json.load(f)
 
@@ -46,7 +45,6 @@ def show_boxes(input_file, detection_directory, output_file):
     """
     Draw rectangles for each bbox objects, after segementation step
     """
-    print(f'Debug Segmentation {input_file}')
 
     def get_annotation_files(directory):
         return sorted(

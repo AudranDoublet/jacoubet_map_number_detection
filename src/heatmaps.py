@@ -125,10 +125,8 @@ def process_image(im, _road_mask):
     return im
 
 def process_file(inputFile, roadFile, outputFile):
-    print(f"Get {inputFile} heatmaps")
-
     image = imread(inputFile)
     road_mask = imread(roadFile)
     result = process_image(image, road_mask)
 
-    imsave(outputFile, result)
+    imsave(outputFile, (result * 255).astype(np.uint8))

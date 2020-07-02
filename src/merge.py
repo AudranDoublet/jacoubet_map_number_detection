@@ -61,8 +61,6 @@ def merge_labels(label_list):
     if len(label_list) == 1:
         return label_list[0] # single number
 
-    print(f"merged id: {label_list[0].merge_id}")
-
     def create_number(label_list):
         res = 0
         for l in label_list:
@@ -101,8 +99,6 @@ def process(label_file, output_file):
     """
     Merge the figures into numbers
     """
-    print(f'Merge {output_file}')
-
     labels = get_labels(label_file)
 
     result = [merge_labels(label_list) for label_list in labels.values()]

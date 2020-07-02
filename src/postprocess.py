@@ -8,10 +8,8 @@ import skimage.io
 import numpy as np
 
 def get_detection_grid(image_path, detections):
-    print(image_path)
     image = skimage.io.imread(image_path)
     height, width = image.shape[:2]
-
     height = int(np.ceil(height / 100))
     width = int(np.ceil(width / 100))
 
@@ -49,7 +47,6 @@ def dump_submission(image_path, detections, output_file):
 
 
 def process_file(input_file, detection_file, output_file):
-    print(f'Postprocess {input_file}')
     with open(detection_file) as f:
         detections = json.load(f)
 
