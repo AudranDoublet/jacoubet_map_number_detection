@@ -49,9 +49,9 @@ class PreprocessingStep:
 
 
 class RoadSegmentation:
-    def run(self, input_file, grid_file, exterior_file, output_file, lines_file, force=False):
+    def run(self, input_file, grid_file, exterior_file, output_file, force=False):
         if force or not check_already_done(output_file):
-            road_segmentation.process_file(input_file, grid_file, exterior_file, output_file, lines_file)
+            road_segmentation.process_file(input_file, grid_file, exterior_file, output_file)
 
 
     def run_pipeline(self, pipeline):
@@ -60,7 +60,6 @@ class RoadSegmentation:
             pipeline.file("grid"),
             pipeline.file("exterior"),
             pipeline.create_file("roads", "02_road_mask.png"),
-            pipeline.create_file("lines", "02_lines.png")
         )
 
 

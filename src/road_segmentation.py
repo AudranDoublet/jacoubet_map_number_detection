@@ -30,12 +30,12 @@ def save_image(img, name):
     skimage.io.imsave(name, img)
 
 
-# In[2]:
+# In[59]:
 
 
 def otsu_image(image):
     gray = 1 - image
-    threshold = threshold_otsu(gray)
+    threshold = threshold_otsu(gray.reshape(-1, gray.shape[1], 1))
 
     return binary_dilation(gray > threshold)
 
@@ -51,6 +51,9 @@ def filter_noise(img, threshold=0.3, m_w=40):
         h = bbox[2] - bbox[0]
         w = bbox[3] - bbox[1]
 
+        if region.major_axis_length == 0:
+            continue
+
         ratio = region.minor_axis_length / region.major_axis_length
 
         box = label_image[bbox[0]:bbox[2],bbox[1]:bbox[3]]
@@ -63,24 +66,27 @@ def filter_noise(img, threshold=0.3, m_w=40):
     return img
 
 
-# In[62]:
+# In[61]:
 
 
 def preprocess_image(image, grid, exterior):
     binary = binary_closing(np.any(otsu_image(image), axis=2))
     original = binary.copy()
-    binary = binary ^ filter_noise(binary ^ remove_small_objects(binary, 5000), threshold=0.1, m_w=100)
-    binary[exterior > 0] = 0
-    binary[grid > 0] = 0
 
-    binary = binary ^ filter_noise(binary ^ remove_small_objects(binary, 5000) ^ (binary ^ remove_small_objects(binary, 100)))
-    #binary = binary_closing(binary, disk(10))
-    binary = remove_small_objects(binary, 100)
+    im = original
+    im[exterior > 0] = 0
+    im[grid > 0] = 0
+    im = filters.gaussian(im, 2)
+    im = feature.canny(im)
+    im = im ^ filter_noise(im ^ remove_small_objects(im, 5000), threshold=0.1, m_w=100)
+    im = dilation(im)
+    im = im ^ filter_noise(im ^ remove_small_objects(im, 10000), threshold=0.1, m_w=100)
+    im = dilation(im, disk(2))
+    
+    return original, im
 
-    return original, binary
 
-
-# In[149]:
+# In[45]:
 
 
 def dist_map(binary, exterior):
@@ -103,10 +109,10 @@ def dist_map(binary, exterior):
         label_box = labels[bbox[0]:bbox[2],bbox[1]:bbox[3]]
         dists_box = n_dist[bbox[0]:bbox[2],bbox[1]:bbox[3]]
         
-        label_filter = label_box == (i + 1)
+        label_filter = label_box == reg.label
 
         if dists_box[label_filter].shape[0] == 0:
-            print("euh")
+            print(i+1, np.unique(label_box))
             continue
         
         h = bbox[2] - bbox[0]
@@ -118,45 +124,62 @@ def dist_map(binary, exterior):
     return n_dist
 
 
-# In[6]:
+# In[56]:
 
 
-def filter_roads(binary, n_dist, exterior):
-    n_binary = binary.copy()
-    n_binary[exterior > 0] = 1
-    n_binary[n_dist < 10] = 1
-    n_binary[n_dist > 100] = 1
-    n_binary = remove_small_holes(n_binary, 800000)
+def get_useless_edges(n_dist, exterior):
+    sobel = filters.sobel(n_dist)
+    v = sobel.copy()
+    v[exterior > 0] = 11
 
-    return n_binary
+    v = v > 40
+    v[binary_dilation(binary_dilation(n_dist == 0))] = 0
+    v[v * sobel > 100] = 0
+    v = remove_small_objects(v, 100)
 
-
-def process_file(inputFile, gridFile, exteriorFile, outputFile, linesOutputFile):
-    image = skimage.io.imread(inputFile)
-    grid = skimage.io.imread(gridFile) > 0
-    exterior = skimage.io.imread(exteriorFile) > 0
-    original, binary = preprocess_image(image, grid, exterior)
-    n_dist = dist_map(binary, exterior)
-
-    n_binary = filter_roads(binary, n_dist, exterior)
-
-    edges = filters.sobel(n_dist)
-    edges[exterior > 0] = 11
-
-    edges = edges > 20
-    lines = edges.copy()
-    edges[n_dist > 300] = True
+    return v
 
 
-    edges = remove_small_holes(edges, 1000)
-
-    v2 = binary.copy()
-    v2[edges > 0] = True
-    show_image(1 - v2)
+# In[50]:
 
 
-    v2[exterior > 0] = 1
-    labels = label(1 - v2, connectivity=1)
+def filter_edges(edges):
+    edges = edges.copy()
+    labels = label(1 - edges, connectivity=1)
+
+    for i, reg in enumerate(regionprops(labels)):
+        bbox = reg.bbox
+
+        nb_pix = reg.minor_axis_length * reg.major_axis_length
+        pc_pix = reg.area / max(nb_pix, 1)
+
+
+        if reg.area > 1000000:
+            continue
+
+        if nb_pix == 0 or pc_pix > 0.50:
+            label_box = labels[bbox[0]:bbox[2],bbox[1]:bbox[3]]
+            dists_box = edges[bbox[0]:bbox[2],bbox[1]:bbox[3]]
+
+            label_filter = label_box == reg.label
+
+            dists_box[label_filter] = 1
+
+    return edges
+
+
+# In[52]:
+
+
+def filter_roads(binary, edges, exterior, closing=False):
+    filtered = binary.copy()
+    filtered[edges > 0] = True
+
+    if closing:
+        filtered = binary_closing(binary_opening(filtered), disk(3))
+
+    filtered[exterior > 0] = 1
+    labels = label(1 - filtered, connectivity=1)
 
     for i, reg in enumerate(regionprops(labels)):
         bbox = reg.bbox
@@ -165,20 +188,53 @@ def process_file(inputFile, gridFile, exteriorFile, outputFile, linesOutputFile)
         w = bbox[3] - bbox[1]
 
         ratio = reg.minor_axis_length / max(reg.major_axis_length, 1)
-        
-        if reg.perimeter > 4000 and (reg.perimeter / reg.area) < 0.1:
+
+        if reg.perimeter > 8000 and (reg.perimeter / reg.area) < 0.05:
             continue
 
         if ratio < 0.1 and reg.minor_axis_length > 20.0:
             continue
-            
-        if max(w, h) < 2000 and (w + h) < 3000:
+
+        if max(w, h) < 3000 and (w + h) < 6000:
             label_box = labels[bbox[0]:bbox[2],bbox[1]:bbox[3]]
-            dists_box = v2[bbox[0]:bbox[2],bbox[1]:bbox[3]]
-            
+            dists_box = filtered[bbox[0]:bbox[2],bbox[1]:bbox[3]]
+
             label_filter = label_box == (i + 1)
 
             dists_box[label_filter] = 1
 
-    skimage.io.imsave(outputFile, v2*255)
-    skimage.io.imsave(linesOutputFile, edges*255)
+    return filtered
+
+
+def process_file(inputFile, gridFile, exteriorFile, outputFile):
+    image = skimage.io.imread(inputFile)
+    grid = skimage.io.imread(gridFile) > 0
+    exterior = skimage.io.imread(exteriorFile) > 0
+
+    original, binary = preprocess_image(image, grid, exterior)
+
+
+    n_dist = dist_map(binary, exterior)
+
+    edges = filters.sobel(n_dist)
+    edges[exterior > 0] = 11
+
+    edges = edges > 40
+    edges[n_dist > 300] = True
+    edges[get_useless_edges(n_dist, exterior) > 0] = False
+
+    edges = remove_small_holes(edges, 1000)
+    edges_filtered = filter_edges(edges)
+
+
+    v2 = filter_roads(binary, edges, exterior)
+    v2_filtered = filter_roads(binary, edges_filtered, exterior, True)
+    v2_diff = filter_edges((1 - (v2_filtered ^ v2))) > 0
+
+    result = v2 ^ v2_diff
+
+    # postprocessing
+    result = remove_small_holes(result, 10000)
+    result = binary_closing(result, disk(3))
+
+    skimage.io.imsave(outputFile, result*255)
