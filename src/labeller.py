@@ -51,7 +51,7 @@ def generate_result(predictions, annotations):
 
     return result
 
-def label_segments(directory_path, output_path, model_path):
+def label_segments(directory_path, model_path, output_path):
     directory_path = Path(directory_path)
     output_path = Path(output_path)
 

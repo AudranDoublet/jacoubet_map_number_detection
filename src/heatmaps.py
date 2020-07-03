@@ -119,6 +119,30 @@ class HeatmapWorker:
         return im
 
 
+    def road_distance_mask(self):
+        return distance_transform_edt(1 - self.road_mask)
+
+
+    def im_remove_objects_by_road_distance(self, im, min_distance=1+1e-3, max_distance=20):
+        im = im.copy()
+        distance_map = self.road_distance_mask()
+
+        label_image = label(im)
+
+        for reg in regionprops(label_image):
+            sh = reg.coords[:,0]
+            sw = reg.coords[:,1]
+
+            road_distance = np.min(distance_map[sh, sw])
+
+            # if object is too far or too near from the road, ignore it
+            if road_distance > max_distance or road_distance < min_distance:
+                im[sh, sw] = 0
+                continue
+
+        return im
+
+
     def im_remove_small_aligned_objects(self, im, line_length=200, line_gap=25, threshold_size=128):
         # FIXME: - it'd be better to filter the image to have only small objects, 
         #          so we can decrease `line_length`, and increase `line_gap`
@@ -139,6 +163,7 @@ class HeatmapWorker:
 
     def process_image(self):
         im = self.im_detect_blobs(self.image)
+        im = self.im_remove_objects_by_road_distance(im)
         im = self.im_remove_small_aligned_objects(im)
 
         im = (im * 255).astype(np.uint8)
