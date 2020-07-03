@@ -52,9 +52,9 @@ def area_ecc_filter(im, area_bounds, ecc_bounds, ext_bounds=(0.0, 1.0)):
 class HeatmapWorker:
     def __init__(self, inputFile, roadFile, gridFile, exteriorFile, outputFile):
         self.image = imread(inputFile)
-        self.road_mask = imread(roadFile)
-        self.grid_mask = imread(gridFile)
-        self.exterior_mask = imread(exteriorFile)
+        self.road_mask = imread(roadFile) > 0
+        self.grid_mask = imread(gridFile) > 0
+        self.exterior_mask = imread(exteriorFile) > 0
         self.output_file = outputFile
 
  
@@ -99,6 +99,9 @@ class HeatmapWorker:
         # FIXME @Sami why recalculate the grid?
         mask_grid = self.im_detect_grid()
         im[mask_grid] = im.max()
+
+        # remove exterior
+        im[self.exterior_mask] = im.max()
 
         # detect lines
         mask_lines = self.im_detect_lines(im, 2.3)
