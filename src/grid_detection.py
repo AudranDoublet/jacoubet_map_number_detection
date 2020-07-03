@@ -202,7 +202,7 @@ def prefilter(image):
     return lin_img, col_img
 
 
-def process_image(inputFile, exteriorFile, gridFile):
+def process_image(inputFile, exteriorFile, gridFile, thinGridFile):
     image = rgb2gray(io.imread(inputFile))
     lin_img, col_img = prefilter(image)
 
@@ -226,8 +226,12 @@ def process_image(inputFile, exteriorFile, gridFile):
     for rr, cc in (cols[1:-1] + rows[1:-1]):
         grid[rr, cc] = 255
 
+    thinGrid = grid.copy()
     grid = dilation(grid, disk(2))
+
     grid[exterior == 255] = 0
+    thinGrid[exterior == 255] = 0
 
     io.imsave(exteriorFile, exterior.astype(np.uint8), check_contrast=False)
     io.imsave(gridFile, grid.astype(np.uint8), check_contrast=False)
+    io.imsave(thinGridFile, thinGrid.astype(np.uint8), check_contrast=False)
