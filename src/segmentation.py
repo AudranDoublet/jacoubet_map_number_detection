@@ -573,7 +573,6 @@ def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
     original_images = [apply_mask_gray(original, prop) for prop in props]
 
     for i, image in enumerate(original_images):
-        """
         pos = props[i].centroid
         pos = (int(pos[0]), int(pos[1]))
 
@@ -591,8 +590,6 @@ def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
 
         image = skimage.transform.rotate(image * 1.0, -angle, resize=True)
 
-
-        """
         with open(os.path.join(outputFile, f"{i:04}.json"), 'w') as f:
             json.dump(props_to_dict(props[i], 0), f)
 
