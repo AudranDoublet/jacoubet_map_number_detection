@@ -567,7 +567,7 @@ def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
     props = [regionprop_to_properties(rp) for rp in props]
 
     for i, bin_im in enumerate(bin_images):
-        skimage.io.imsave(os.path.join(outputFile, f"bin_{i:04}.png"), bin_im)
+        skimage.io.imsave(os.path.join(outputFile, f"bin_{i:04}.png"), (255 * bin_im).astype(np.uint8))
 
     original = rgb2gray(original)
     original_images = [apply_mask_gray(original, prop) for prop in props]
@@ -594,7 +594,7 @@ def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
             json.dump(props_to_dict(props[i], 0), f)
 
         # Convert segment to grayscale and normalize for classification model
-        skimage.io.imsave(os.path.join(outputFile, f"{i:04}.png"), image)
+        skimage.io.imsave(os.path.join(outputFile, f"{i:04}.png"), image.astype(np.uint8))
 
 
 #process_from_heatmaps("output_dir/03_heatmaps.png", "results")
