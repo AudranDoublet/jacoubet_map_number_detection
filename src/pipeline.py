@@ -19,207 +19,268 @@ def check_already_done(output_file):
     return os.path.exists(output_file)
 
 
-class GridDetectionStep:
-    def run(self, input_file, exterior_file, grid_file, force=False):
+def check_already_done_all(files):
+    return any([not check_already_done(f) for f in files])
+
+
+class GenericStep:
+    ALWAYS_RUN = False
+    DEBUG_STEP = False
+
+    def impl(self, *kargs):
         """
-        Dewarp input image `input_file` and write result in `output_file`
+        Step implementation
+        Should be overriden by child class
         """
-        if force or not check_already_done(exterior_file):
-            grid_detection.process_image(input_file, exterior_file, grid_file)
-            return True
+        pass
+
+    def input_files(self, pipeline):
+        """
+        Input files of step
+        May be overriden by child class
+        """
+        return []
+
+
+    def output_files(self, pipeline):
+        """
+        Output files of step
+        May be overriden by child class
+        """
+        return []
+
+
+    def output_folders(self, pipeline):
+        """
+        Output folders of step
+        May be overriden by child class
+        """
+        return []
+
+
+    def run_pipeline(self, pipeline, force=False):
+        input_files = self.input_files(pipeline)
+        output_files = self.output_files(pipeline)
+        output_folders = self.output_folders(pipeline)
+
+        should_run = self.ALWAYS_RUN or force
+
+        # if an output file/folder doesn't exists, we should run
+        if check_already_done_all(output_files + output_folders):
+            should_run = True
+
+        # run
+        if should_run:
+            # delete existing output folders
+            for f in output_folders:
+                if check_already_done(f):
+                    shutil.rmtree(f)
+
+            args = input_files + output_files + output_folders
+            self.impl(*args)
+
+            # update next steps if:
+            # * this step has and output file
+            # * and this step is not marked as debug
+            return (not self.DEBUG_STEP) and len(output_files + output_folders) > 0
 
         return False
 
 
-    def run_pipeline(self, pipeline, force=False):
-        return self.run(
+class GridDetectionStep(GenericStep):
+    def impl(self, *kargs):
+        grid_detection.process_image(*kargs)
+
+
+    def input_files(self, pipeline):
+        return [
             pipeline.input_file(),
+        ]
+
+
+    def output_files(self, pipeline):
+        return [
             pipeline.create_file("exterior", "01_exterior.png"),
             pipeline.create_file("grid", "01_grid.png"),
-            force=force,
-        )
+        ]
 
 
-class PreprocessingStep:
-    def run(self, input_file, exterior_file, output_file, force=False):
-        if force or not check_already_done(output_file):
-            preprocessing.process_file(input_file, exterior_file, output_file)
-            return True
-
-        return False
+class PreprocessingStep(GenericStep):
+    def impl(self, *kargs):
+        preprocessing.process_file(*kargs)
 
 
-    def run_pipeline(self, pipeline, force=False):
-        return self.run(
+    def input_files(self, pipeline):
+        return [
             pipeline.input_file(),
             pipeline.file("exterior"),
+        ]
+
+
+    def output_files(self, pipeline):
+        return [
             pipeline.create_file("preprocessed", "02_preprocessed.png"),
-            force=force,
-        )
+        ]
 
 
-class RoadSegmentation:
-    def run(self, input_file, grid_file, exterior_file, output_file, force=False):
-        if force or not check_already_done(output_file):
-            road_segmentation.process_file(input_file, grid_file, exterior_file, output_file)
-            return True
-
-        return False
+class RoadSegmentation(GenericStep):
+    def impl(self, *kargs):
+        road_segmentation.process_file(*kargs)
 
 
-    def run_pipeline(self, pipeline, force=False):
-        return self.run(
+    def input_files(self, pipeline):
+        return [
             pipeline.file("preprocessed"),
             pipeline.file("grid"),
             pipeline.file("exterior"),
+        ]
+
+
+    def output_files(self, pipeline):
+        return [
             pipeline.create_file("roads", "02_road_mask.png"),
-            force=force,
-        )
+        ]
 
 
-class HeatmapStep:
-    def run(self, *kargs, output_file, force=False):
-        """
-        Find heatmaps
-        """
-        if force or not check_already_done(output_file):
-            heatmaps.process_file(*kargs, output_file)
-            return True
-
-        return False
+class HeatmapStep(GenericStep):
+    def impl(self, *kargs):
+        heatmaps.process_file(*kargs)
 
 
-    def run_pipeline(self, pipeline, force=False):
-        return self.run(
+    def input_files(self, pipeline):
+        return [
             pipeline.file("preprocessed"),
             pipeline.file("roads"),
             pipeline.file("grid"),
             pipeline.file("exterior"),
-            output_file=pipeline.create_file("heatmaps", "03_heatmaps.png"),
-            force=force,
-        )
+        ]
 
 
-class SegmentationStep:
-    def run(self, input_file, road_file, output_file, force=False):
-        """
-        Segment heatmaps
-        """
-        already_done = check_already_done(output_file)
-
-        if force or not already_done:
-            if already_done:
-                shutil.rmtree(output_file)
-
-            segmentation.process_from_heatmaps(input_file, road_file, output_file)
-            return True
-
-        return False
+    def output_files(self, pipeline):
+        return [
+            pipeline.create_file("heatmaps", "03_heatmaps.png"),
+        ]
 
 
-    def run_pipeline(self, pipeline, force=False):
-        return self.run(
+class SegmentationStep(GenericStep):
+    def impl(self, *kargs):
+        segmentation.process_from_heatmaps(*kargs)
+
+
+    def input_files(self, pipeline):
+        return [
             pipeline.file("heatmaps"),
             pipeline.file("roads"),
+        ]
+
+
+    def output_folders(self, pipeline):
+        return [
             pipeline.create_file("segments", "04_segments"),
-            force=force,
-        )
+        ]
 
 
-class LabelingStep:
-    def run(self, input_directory, output_file, model_path, force=False):
-        if force or not check_already_done(output_file):
-            labeller.label_segments(input_directory, output_file, model_path)
-            return True
-
-        return False
+class LabelingStep(GenericStep):
+    def impl(self, *kargs):
+        labeller.label_segments(*kargs)
 
 
-    def run_pipeline(self, pipeline, force=False):
-        return self.run(
-            input_directory=pipeline.file("segments"),
-            output_file=pipeline.create_file("labels", "05_labels.json"),
-            model_path=pipeline.global_file("model"),
-            force=force,
-        )
+    def input_files(self, pipeline):
+        return [
+            pipeline.file("segments"),
+            pipeline.global_file("model"),
+        ]
 
 
-class MergeStep:
-    def run(self, label_file, output_file, force=False):
-        if force or not check_already_done(output_file):
-            merge.process(label_file, output_file)
-            return True
-
-        return False
+    def output_files(self, pipeline):
+        return [
+            pipeline.create_file("labels", "05_labels.json"),
+        ]
 
 
-    def run_pipeline(self, pipeline, force=False):
-        return self.run(
+class MergeStep(GenericStep):
+    def impl(self, *kargs):
+        merge.process(*kargs)
+
+
+    def input_files(self, pipeline):
+        return [
             pipeline.file("labels"),
+        ]
+
+
+    def output_files(self, pipeline):
+        return [
             pipeline.create_file("merge_labels", "06_merged_labels.json"),
-            force=force,
-        )
+        ]
 
 
-class PostprocessingStep:
-    def run(self, input_file, detection_file, output_file, force=False):
-        postprocess.process_file(input_file, detection_file, output_file)
-        return False
+class PostprocessingStep(GenericStep):
+    ALWAYS_RUN = True
+
+    def impl(self, *kargs):
+        postprocess.process_file(*kargs)
 
 
-    def run_pipeline(self, pipeline, force=False):
-        return self.run(
+    def input_files(self, pipeline):
+        return [
             pipeline.input_file(),
             pipeline.file("merge_labels"),
             pipeline.global_file("submission"),
-            force=force,
-        )
-
-class DebugStep:
-    def run(self, input_file, detection_file, output_file, force=False):
-        if force or not check_already_done(output_file):
-            debug.process_file(input_file, detection_file, output_file)
-
-        return False # updating debug step should not update other steps
+        ]
 
 
-    def run_pipeline(self, pipeline, force=False):
-        return self.run(
+class DebugStep(GenericStep):
+    DEBUG_STEP = True
+
+    def impl(self, *kargs):
+        debug.process_file(*kargs)
+
+
+    def input_files(self, pipeline):
+        return [
             pipeline.input_file(),
             pipeline.file("merge_labels"),
+        ]
+
+
+    def output_files(self, pipeline):
+        return [
             pipeline.create_file("debug", "06_debug.png"),
-            force=force,
-        )
-
-class DebugSegmentationStep:
-    def run(self, input_file, annotation_dir, output_file, force=False):
-        if force or not check_already_done(output_file):
-            debug.show_boxes(input_file, annotation_dir, output_file)
-
-        return False # updating debug step should not update other steps
+        ]
 
 
-    def run_pipeline(self, pipeline, force=False):
-        return self.run(
+class DebugSegmentationStep(GenericStep):
+    DEBUG_STEP = True
+
+    def impl(self, *kargs):
+        debug.show_boxes(*kargs)
+
+
+    def input_files(self, pipeline):
+        return [
             pipeline.file("heatmaps"),
             pipeline.file("segments"),
-            pipeline.create_file("debug_seg", "04_debug.png"),
-            force=force,
-        )
+        ]
 
+
+    def output_files(self, pipeline):
+        return [
+            pipeline.create_file("debug_seg", "04_debug.png"),
+        ]
 
 
 pipeline_steps = [
-    ('GridDetection',    GridDetectionStep),
-    ('Preprocessing',    PreprocessingStep),
-    ('RoadSegmentation', RoadSegmentation),
-    ('Heatmaps',         HeatmapStep),
-    ('Segmentation',     SegmentationStep),
-    ('Labelization',     LabelingStep),
-    ('MergeNumbers',     MergeStep),
-    ('Postprocessing',   PostprocessingStep),
-    ('Debug',            DebugStep),
-    ('DebugSegmentation',DebugSegmentationStep),
+    ('GridDetection',     GridDetectionStep),
+    ('Preprocessing',     PreprocessingStep),
+    ('RoadSegmentation',  RoadSegmentation),
+    ('Heatmaps',          HeatmapStep),
+    ('Segmentation',      SegmentationStep),
+    ('Labelization',      LabelingStep),
+    ('MergeNumbers',      MergeStep),
+    ('Postprocessing',    PostprocessingStep),
+    ('Debug',             DebugStep),
+    ('DebugSegmentation', DebugSegmentationStep),
 ]
 
 class Pipeline:
