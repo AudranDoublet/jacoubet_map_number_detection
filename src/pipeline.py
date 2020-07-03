@@ -1,6 +1,7 @@
 import os
 import sys
 import structlog
+import shutil
 
 import preprocessing
 import grid_detection
@@ -25,13 +26,17 @@ class GridDetectionStep:
         """
         if force or not check_already_done(exterior_file):
             grid_detection.process_image(input_file, exterior_file, grid_file)
+            return True
+
+        return False
 
 
-    def run_pipeline(self, pipeline):
-        self.run(
+    def run_pipeline(self, pipeline, force=False):
+        return self.run(
             pipeline.input_file(),
             pipeline.create_file("exterior", "01_exterior.png"),
             pipeline.create_file("grid", "01_grid.png"),
+            force=force,
         )
 
 
@@ -39,13 +44,17 @@ class PreprocessingStep:
     def run(self, input_file, exterior_file, output_file, force=False):
         if force or not check_already_done(output_file):
             preprocessing.process_file(input_file, exterior_file, output_file)
+            return True
+
+        return False
 
 
-    def run_pipeline(self, pipeline):
-        self.run(
+    def run_pipeline(self, pipeline, force=False):
+        return self.run(
             pipeline.input_file(),
             pipeline.file("exterior"),
-            pipeline.create_file("preprocessed", "02_preprocessed.png")
+            pipeline.create_file("preprocessed", "02_preprocessed.png"),
+            force=force,
         )
 
 
@@ -53,31 +62,41 @@ class RoadSegmentation:
     def run(self, input_file, grid_file, exterior_file, output_file, force=False):
         if force or not check_already_done(output_file):
             road_segmentation.process_file(input_file, grid_file, exterior_file, output_file)
+            return True
+
+        return False
 
 
-    def run_pipeline(self, pipeline):
-        self.run(
+    def run_pipeline(self, pipeline, force=False):
+        return self.run(
             pipeline.file("preprocessed"),
             pipeline.file("grid"),
             pipeline.file("exterior"),
             pipeline.create_file("roads", "02_road_mask.png"),
+            force=force,
         )
 
 
 class HeatmapStep:
-    def run(self, input_file, road_file, output_file, force=False):
+    def run(self, *kargs, output_file, force=False):
         """
         Find heatmaps
         """
         if force or not check_already_done(output_file):
-            heatmaps.process_file(input_file, road_file, output_file)
+            heatmaps.process_file(*kargs, output_file)
+            return True
+
+        return False
 
 
-    def run_pipeline(self, pipeline):
-        self.run(
+    def run_pipeline(self, pipeline, force=False):
+        return self.run(
             pipeline.file("preprocessed"),
             pipeline.file("roads"),
-            pipeline.create_file("heatmaps", "03_heatmaps.png")
+            pipeline.file("grid"),
+            pipeline.file("exterior"),
+            output_file=pipeline.create_file("heatmaps", "03_heatmaps.png"),
+            force=force,
         )
 
 
@@ -86,71 +105,106 @@ class SegmentationStep:
         """
         Segment heatmaps
         """
-        segmentation.process_from_heatmaps(input_file, road_file, output_file)
+        already_done = check_already_done(output_file)
+
+        if force or not already_done:
+            if already_done:
+                shutil.rmtree(output_file)
+
+            segmentation.process_from_heatmaps(input_file, road_file, output_file)
+            return True
+
+        return False
 
 
-    def run_pipeline(self, pipeline):
-        self.run(
+    def run_pipeline(self, pipeline, force=False):
+        return self.run(
             pipeline.file("heatmaps"),
             pipeline.file("roads"),
-            pipeline.create_file("segments", "04_segments")
+            pipeline.create_file("segments", "04_segments"),
+            force=force,
         )
 
 
 class LabelingStep:
     def run(self, input_directory, output_file, model_path, force=False):
-        labeller.label_segments(input_directory, output_file, model_path)
+        if force or not check_already_done(output_file):
+            labeller.label_segments(input_directory, output_file, model_path)
+            return True
 
-    def run_pipeline(self, pipeline):
-        self.run(
+        return False
+
+
+    def run_pipeline(self, pipeline, force=False):
+        return self.run(
             input_directory=pipeline.file("segments"),
             output_file=pipeline.create_file("labels", "05_labels.json"),
-            model_path=pipeline.global_file("model")
+            model_path=pipeline.global_file("model"),
+            force=force,
         )
 
 
 class MergeStep:
     def run(self, label_file, output_file, force=False):
-        merge.process(label_file, output_file)
+        if force or not check_already_done(output_file):
+            merge.process(label_file, output_file)
+            return True
 
-    def run_pipeline(self, pipeline):
-        self.run(
+        return False
+
+
+    def run_pipeline(self, pipeline, force=False):
+        return self.run(
             pipeline.file("labels"),
             pipeline.create_file("merge_labels", "06_merged_labels.json"),
+            force=force,
         )
 
 
 class PostprocessingStep:
     def run(self, input_file, detection_file, output_file, force=False):
         postprocess.process_file(input_file, detection_file, output_file)
+        return False
 
-    def run_pipeline(self, pipeline):
-        self.run(
+
+    def run_pipeline(self, pipeline, force=False):
+        return self.run(
             pipeline.input_file(),
             pipeline.file("merge_labels"),
             pipeline.global_file("submission"),
+            force=force,
         )
 
 class DebugStep:
     def run(self, input_file, detection_file, output_file, force=False):
-        debug.process_file(input_file, detection_file, output_file)
+        if force or not check_already_done(output_file):
+            debug.process_file(input_file, detection_file, output_file)
 
-    def run_pipeline(self, pipeline):
-        self.run(
+        return False # updating debug step should not update other steps
+
+
+    def run_pipeline(self, pipeline, force=False):
+        return self.run(
             pipeline.input_file(),
             pipeline.file("merge_labels"),
             pipeline.create_file("debug", "06_debug.png"),
+            force=force,
         )
 
 class DebugSegmentationStep:
     def run(self, input_file, annotation_dir, output_file, force=False):
-        debug.show_boxes(input_file, annotation_dir, output_file)
+        if force or not check_already_done(output_file):
+            debug.show_boxes(input_file, annotation_dir, output_file)
 
-    def run_pipeline(self, pipeline):
-        self.run(
+        return False # updating debug step should not update other steps
+
+
+    def run_pipeline(self, pipeline, force=False):
+        return self.run(
             pipeline.file("heatmaps"),
             pipeline.file("segments"),
             pipeline.create_file("debug_seg", "04_debug.png"),
+            force=force,
         )
 
 
@@ -217,12 +271,14 @@ class Pipeline:
         self._known_files = {}
 
         os.makedirs(self.file_output_dir(), exist_ok=True)
+        force = False
 
         for step in range(from_step, len(pipeline_steps)):
             (name, impl) = pipeline_steps[step]
             log.info("run_step", step=name)
 
-            impl().run_pipeline(self)
+            if impl().run_pipeline(self, force=force):
+                force = True
 
 
     def run(self, from_step=None):
