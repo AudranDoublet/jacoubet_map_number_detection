@@ -2,6 +2,7 @@ import os
 import sys
 import structlog
 
+import preprocessing
 import grid_detection
 import road_segmentation
 import heatmaps
@@ -35,14 +36,15 @@ class GridDetectionStep:
 
 
 class PreprocessingStep:
-    def run(self, input_file, output_file, force=False):
-        import shutil
-        shutil.copy(input_file, output_file) # FIXME
+    def run(self, input_file, exterior_file, output_file, force=False):
+        if force or not check_already_done(output_file):
+            preprocessing.process_file(input_file, exterior_file, output_file)
 
 
     def run_pipeline(self, pipeline):
         self.run(
             pipeline.input_file(),
+            pipeline.file("exterior"),
             pipeline.create_file("preprocessed", "02_preprocessed.png")
         )
 
