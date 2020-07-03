@@ -229,5 +229,5 @@ def process_image(inputFile, exteriorFile, gridFile):
     grid = dilation(grid, disk(2))
     grid[exterior == 255] = 0
 
-    io.imsave(exteriorFile, exterior.astype(np.uint8))
-    io.imsave(gridFile, grid.astype(np.uint8))
+    io.imsave(exteriorFile, exterior.astype(np.uint8), check_contrast=False)
+    io.imsave(gridFile, grid.astype(np.uint8), check_contrast=False)
