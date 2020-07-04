@@ -8,6 +8,11 @@ from skimage import img_as_ubyte
 
 from grid_detection import otsu_image
 
+K_SEUIL_MULTIPLE = 0.62
+K_SEUIL_MULTIPLE2 = 1.7
+INDEX = 0
+
+
 def find_nearest_white(img, target):
     nonzero = cv2.findNonZero(img)
 
@@ -210,18 +215,18 @@ def remove_noise(images, properties=None):
     return results, results_prop, suppr
 
 # filtrer: prendre uniquement les images avec un seul nombre (fonctionne uniquement si une majorité de nombres simples)
-def extract_single_numbers(images, properties=None, digit_coeff=1e-1):
+def extract_single_numbers(images, properties=None):
     # compute mean of shapes
     shapes = [arr.shape for arr in images]
     mean_shape = np.mean(shapes, axis=0)
 
     # apply filter
-    k = mean_shape * 0.38
+    k = mean_shape * K_SEUIL_MULTIPLE
     singles, multiples = [], []
     suppr = []
     singles_prop, multiples_prop = [], []
     for i, obj in enumerate(images):
-        if (obj.shape[0] <= mean_shape[0] - k[0] or obj.shape[1] <= mean_shape[1] - k[1]):
+        if (obj.shape[0] <= k[0] or obj.shape[1] <= k[1]):
             singles.append(obj)
             if properties:
                 singles_prop.append(properties[i])
@@ -333,7 +338,7 @@ def add_result(img_res, nb_pixels, results, properties):
     """
     copy = np.copy(img_res)
     objects, tmp_properties = get_objects(img_res, ret_props=True)
-    if len(objects) != 2: # if not 2 objects: bad cut
+    if len(objects) < 2: # if 1 or 0 object: bad cut
         return
 
     def get_proportions(new_objs):
@@ -343,7 +348,8 @@ def add_result(img_res, nb_pixels, results, properties):
         return div
 
     prop = get_proportions(objects)
-    if prop <= 2 and prop >= 1/2: # good proportions
+
+    if prop <= 5 and prop >= 1/5: # good proportions
         res = {}
         # save the proportions
         res["prop"] = prop
@@ -352,6 +358,7 @@ def add_result(img_res, nb_pixels, results, properties):
         # save the results
         res["objects"] = objects
         res["image"] = copy
+        res["nb_objects"] = len(objects)
 
         results.append((res, properties, tmp_properties))
 
@@ -362,17 +369,20 @@ def pick_results(results, nb_labels):
      - best proportion if same cut
     """
     if len(results) == 0:
-        return [], None
+        return [], None, nb_labels
 
     best_res = 0
     min_cut = results[0][0]["white_to_black"]
     best_prop = results[0][0]["prop"]
+    best_nb = results[0][0]["nb_objects"]
 
     for i in range(1, len(results)):
-        if min_cut > results[i][0]["white_to_black"] or \
+        if best_nb > results[i][0]["nb_objects"] or \
+         min_cut > results[i][0]["white_to_black"] or \
          (min_cut == results[i][0]["white_to_black"] and abs(best_prop - 1) > abs(results[i][0]["prop"] - 1)):
             min_cut = results[i][0]["white_to_black"]
             best_res = i
+            best_nb = results[i][0]["nb_objects"]
 
     # we use in postprocess: prop.bbox, minor_axis_length, major_axis_length, centroid, orientation
 
@@ -386,35 +396,42 @@ def pick_results(results, nb_labels):
         merge_id = old_prop.merge_id
 
     # label of first object in cut = same as object before cut
-    new_properties1 = Properties(
-        old_prop.label,
-        merge_id,
-        properties[0].minor_axis_length,
-        properties[0].major_axis_length,
-        properties[0].orientation,
-        top_x,
-        top_y
+    new_properties = []
+    new_properties.append(
+        Properties(
+            old_prop.label,
+            merge_id,
+            properties[0].minor_axis_length,
+            properties[0].major_axis_length,
+            properties[0].orientation,
+            top_x,
+            top_y
+        )
     )
     # new label for the second object
-    new_properties2 = Properties(
-        nb_labels + 1,
-        merge_id,
-        properties[1].minor_axis_length,
-        properties[1].major_axis_length,
-        properties[1].orientation,
-        top_x,
-        top_y
-    )
+    for i in range(1, best_nb):
+        nb_labels += 1
+        new_properties.append(
+            Properties(
+                merge_id,
+                nb_labels,
+                properties[i].minor_axis_length,
+                properties[i].major_axis_length,
+                properties[i].orientation,
+                top_x,
+                top_y
+            )
+        )
 
     # update the bbox to global image coords
-    new_properties1.update_bbox(properties[0].bbox)
-    new_properties2.update_bbox(properties[1].bbox)
+    for i in range(best_nb):
+        new_properties[i].update_bbox(properties[i].bbox)
 
     # update the bbox to global image coords
-    new_properties1.update_centroid(properties[0].centroid)
-    new_properties2.update_centroid(properties[1].centroid)
+    for i in range(best_nb):
+        new_properties[i].update_centroid(properties[i].centroid)
 
-    return res["objects"], [new_properties1, new_properties2]
+    return res["objects"], new_properties, nb_labels
 
 
 def cut_image(original_img, prop, nb_labels):
@@ -423,7 +440,7 @@ def cut_image(original_img, prop, nb_labels):
     height, width = original_img.shape
     # cut the object with a line
     bounds_a = (-10, 10) # orientation of the line
-    bounds_b = (0, 2 * width // 3) # x axis and y axis
+    bounds_b = (0, 3 * width // 4) # x axis and y axis
 
     results = []
 
@@ -536,7 +553,7 @@ def cut_image_with_contours(image, old_prop, padding=5):
     return new_segments, new_props
 
 
-def multiples_to_singles(singles, original_imgs, props, m_props):
+def multiples_to_singles(singles, original_imgs, props, m_props, outputFile):
     """
     from list of single images and list of multiple images
     return all images as single number
@@ -548,33 +565,39 @@ def multiples_to_singles(singles, original_imgs, props, m_props):
     tmp_props = []
     for i, img in enumerate(original_imgs):
         # try to cut
-        res, res_props = cut_image(img, m_props[i], length)
+        res, res_props, length = cut_image(img, m_props[i], length)
         if res: # success
+            #skimage.io.imsave(os.path.join(outputFile, f"cutting_{i:04}.png"), img_as_ubyte(img, True))
+            #for i2, res_i in enumerate(res):
+            #    skimage.io.imsave(os.path.join(outputFile, f"cutting_{i:04}_into{i2}.png"), img_as_ubyte(res_i, True))
             tmp.extend(res)
             tmp_props.extend(res_props)
-            length += 1
         else: # fail to cut
+            skimage.io.imsave(f"fail_cut_{i:04}.png", img_as_ubyte(img, True))
             tmp.append(img)
             tmp_props.append(m_props[i])
 
     # check ~ same shape
-    height = 0
-    width = 0
-    for img in singles + tmp:
-        height += img.shape[0]
-        width += img.shape[1]
-    height /= length
-    width /= length
+    shapes = [arr.shape for arr in singles + tmp]
+    mean_shape = np.mean(shapes, axis=0)
 
+    k = 0
+
+    singles.extend(tmp)
+    props.extend(tmp_props)
+    """
     while len(tmp) > 0:
         # if too large: multiple numbers
-        if tmp[0].shape[0] > 1.5 * height or tmp[0].shape[1] > 1.5 * width:
+        if tmp[0].shape[1] > K_SEUIL_MULTIPLE2 * mean_shape[1]:
             # try to cut
-            res, res_props = cut_image(tmp[0], tmp_props[0], length)
+            res, res_props, length = cut_image(tmp[0], tmp_props[0], length)
             if res: # success
+                skimage.io.imsave(f"cutting2_{k:04}.png", img_as_ubyte(tmp[0], True))
+                for i2, res_i in enumerate(res):
+                    skimage.io.imsave(f"cutting2_{k:04}_into{i2}.png", img_as_ubyte(res_i, True))
+                k += 1
                 tmp.extend(res)
                 tmp_props.extend(res_props)
-                length += 1
             else: # fail to cut
                 res, res_props = cut_image_with_contours(tmp[0], tmp_props[0])
                 singles.extend(res)
@@ -587,8 +610,27 @@ def multiples_to_singles(singles, original_imgs, props, m_props):
         # pop image from queue
         tmp = tmp[1:]
         tmp_props = tmp_props[1:]
-
+    """
     return singles, props
+
+def remove_end_noise(images, properties=None):
+    shapes = [arr.shape for arr in images]
+    mean_shape = np.mean(shapes, axis=0)
+    k2 = mean_shape * 0.1
+    seuil = 25 # pixels
+
+    suppr = []
+    results = []
+    results_prop = []
+
+    for i, obj in enumerate(images):
+        if (obj.shape[0] <= k2[0] or obj.shape[1] <= k2[1] or obj.shape[1] + obj.shape[0] < seuil):
+            suppr.append(obj)
+        else:
+            results.append(obj)
+            results_prop.append(properties[i])
+
+    return results, results_prop, suppr
 
 
 import skimage.color
@@ -635,7 +677,7 @@ def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
 
     bin_images, props2, suppr = remove_noise(bin_images, props)
     # cut multiple images to single one
-    singles, multis, single_prop, mult_prop = extract_single_numbers(bin_images, props2, digit_coeff=0.01)
+    singles, multis, single_prop, mult_prop = extract_single_numbers(bin_images, props2)
     # debug
     for i in range(len(suppr)):
         skimage.io.imsave(os.path.join(outputFile, f"suppr_{i:04}.png"), img_as_ubyte(suppr[i], True))
@@ -644,10 +686,16 @@ def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
     for i in range(len(multis)):
         skimage.io.imsave(os.path.join(outputFile, f"multi_{i:04}.png"), img_as_ubyte(multis[i], True))
 
-    bin_images, props = multiples_to_singles(singles, multis, single_prop, mult_prop)
-    props = [regionprop_to_properties(rp) for rp in props]
+    bin_images, props = multiples_to_singles(singles, multis, single_prop, mult_prop, outputFile)
 
-    for i, bin_im in enumerate(bin_images):
+    bin_images_end, props_end, suppr_end = remove_end_noise(bin_images, props)
+    # debug
+    #for i in range(len(suppr_end)):
+    #    skimage.io.imsave(os.path.join(outputFile, f"suppr-end_{i:04}.png"), img_as_ubyte(suppr_end[i], True))
+
+    props = [regionprop_to_properties(rp) for rp in props_end]
+
+    for i, bin_im in enumerate(bin_images_end):
         #skimage.io.imsave(os.path.join(outputFile, f"bin_{i:04}.png"), (255 * bin_im).astype(np.uint8))
         skimage.io.imsave(os.path.join(outputFile, f"bin_{i:04}.png"), img_as_ubyte(bin_im, True))
 

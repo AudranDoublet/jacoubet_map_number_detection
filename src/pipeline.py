@@ -262,7 +262,7 @@ class DebugSegmentationStep(GenericStep):
 
     def input_files(self, pipeline):
         return [
-            pipeline.file("heatmaps"),
+            pipeline.input_file(),
             pipeline.file("segments"),
         ]
 
