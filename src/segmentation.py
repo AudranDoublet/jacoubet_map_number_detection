@@ -487,7 +487,7 @@ def cut_image(original_img, prop, nb_labels):
     return pick_results(results, nb_labels)
 
 
-def cut_image_with_contours(image, old_prop, padding=2):
+def cut_image_with_contours(image, old_prop, padding=5):
     image = image.astype(np.uint8) * 255
 
     cnts = cv2.findContours(image, cv2.RETR_EXTERNAL,
@@ -512,11 +512,6 @@ def cut_image_with_contours(image, old_prop, padding=2):
             continue
 
         x, y, w, h = cv2.boundingRect(cnt)
-        x = np.clip(x - padding, 0, w)
-        y = np.clip(y - padding, 0, h)
-        w = np.clip(w + padding, 0, w)
-        h = np.clip(h + padding, 0, h)
-
         # Create new segment
         new_segment = image[y:y + h, x:x + h].copy()
         new_prop = Properties(
@@ -530,7 +525,7 @@ def cut_image_with_contours(image, old_prop, padding=2):
         )
 
         # update the bbox to global image coords
-        new_prop.update_bbox((int(x), int(y), int(x + w), int(y + h)))
+        new_prop.update_bbox((int(x - padding), int(y - padding), int(x + w + padding), int(y + h + padding)))
 
         # update the bbox to global image coords
         new_prop.update_centroid((int((x + x + w) // 2), int((y + y + h) // 2)))
