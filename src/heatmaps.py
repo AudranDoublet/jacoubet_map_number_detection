@@ -143,7 +143,7 @@ class HeatmapWorker:
 
     def process_image(self):
         im = self.im_detect_blobs(self.image)
-        im = self.im_remove_objects_by_road_distance(im)
+        im = self.im_remove_objects_by_road_distance(im, max_distance=45)
         im = self.im_remove_small_aligned_objects(im)
 
         im = (im * 255).astype(np.uint8)

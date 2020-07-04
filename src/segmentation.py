@@ -4,6 +4,7 @@ import skimage.io
 import cv2
 from skimage.morphology import binary_dilation, dilation
 from skimage.color import rgb2gray
+from skimage import img_as_ubyte
 
 from grid_detection import otsu_image
 
@@ -189,6 +190,25 @@ def show_images(objects, col=5):
     plt.show()
 
 
+def remove_noise(images, properties=None):
+    shapes = [arr.shape for arr in images]
+    mean_shape = np.mean(shapes, axis=0)
+    k2 = mean_shape * 0.4
+    seuil = 33 # pixels
+
+    suppr = []
+    results = []
+    results_prop = []
+
+    for i, obj in enumerate(images):
+        if (obj.shape[0] <= k2[0] or obj.shape[1] <= k2[1] or obj.shape[1] + obj.shape[0] < seuil):
+            suppr.append(obj)
+        else:
+            results.append(obj)
+            results_prop.append(properties[i])
+
+    return results, results_prop, suppr
+
 # filtrer: prendre uniquement les images avec un seul nombre (fonctionne uniquement si une majorité de nombres simples)
 def extract_single_numbers(images, properties=None, digit_coeff=1e-1):
     # compute mean of shapes
@@ -196,11 +216,12 @@ def extract_single_numbers(images, properties=None, digit_coeff=1e-1):
     mean_shape = np.mean(shapes, axis=0)
 
     # apply filter
-    k = mean_shape * digit_coeff
+    k = mean_shape * 0.38
     singles, multiples = [], []
+    suppr = []
     singles_prop, multiples_prop = [], []
     for i, obj in enumerate(images):
-        if (mean_shape[0] - k[0] <= obj.shape[0] and obj.shape[0] <= mean_shape[0] + k[0] and mean_shape[1] - k[1] <= obj.shape[1] and obj.shape[1] <= mean_shape[1] + k[1]):
+        if (obj.shape[0] <= mean_shape[0] - k[0] or obj.shape[1] <= mean_shape[1] - k[1]):
             singles.append(obj)
             if properties:
                 singles_prop.append(properties[i])
@@ -465,6 +486,56 @@ def cut_image(original_img, prop, nb_labels):
 
     return pick_results(results, nb_labels)
 
+
+def cut_image_with_contours(image, old_prop, padding=5):
+    image = image.astype(np.uint8) * 255
+
+    cnts = cv2.findContours(image, cv2.RETR_EXTERNAL,
+                            cv2.CHAIN_APPROX_SIMPLE)
+    cnts = cnts[0]
+
+    if len(cnts) < 2:
+        return [image], [old_prop]
+
+    top_y = old_prop.bbox[0]
+    top_x = old_prop.bbox[1]
+
+    merge_id = old_prop.label
+    if isinstance(old_prop, Properties):
+        merge_id = old_prop.merge_id
+
+    new_segments = []
+    new_props = []
+    for cnt in cnts:
+        # If object is too small, discard it
+        if cv2.contourArea(cnt) < 30:
+            continue
+
+        x, y, w, h = cv2.boundingRect(cnt)
+        # Create new segment
+        new_segment = image[y:y + h, x:x + h].copy()
+        new_prop = Properties(
+            old_prop.label + 1,
+            merge_id,
+            int(w),
+            int(h),
+            0,
+            top_x,
+            top_y
+        )
+
+        # update the bbox to global image coords
+        new_prop.update_bbox((int(x - padding), int(y - padding), int(x + w + padding), int(y + h + padding)))
+
+        # update the bbox to global image coords
+        new_prop.update_centroid((int((x + x + w) // 2), int((y + y + h) // 2)))
+
+        new_segments.append(new_segment)
+        new_props.append(new_prop)
+
+    return new_segments, new_props
+
+
 def multiples_to_singles(singles, original_imgs, props, m_props):
     """
     from list of single images and list of multiple images
@@ -505,8 +576,9 @@ def multiples_to_singles(singles, original_imgs, props, m_props):
                 tmp_props.extend(res_props)
                 length += 1
             else: # fail to cut
-                singles.append(tmp[0])
-                props.append(tmp_props[0])
+                res, res_props = cut_image_with_contours(tmp[0], tmp_props[0])
+                singles.extend(res)
+                props.extend(res_props)
 
         else:
             singles.append(tmp[0])
@@ -561,13 +633,23 @@ def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
     # Binarize segments and apply mask from original image
     bin_images = [apply_mask_binary(original, mask, prop) for mask, prop in zip(images, props)]
 
+    bin_images, props2, suppr = remove_noise(bin_images, props)
     # cut multiple images to single one
-    singles, multis, single_prop, mult_prop = extract_single_numbers(bin_images, props, digit_coeff=0.01)
+    singles, multis, single_prop, mult_prop = extract_single_numbers(bin_images, props2, digit_coeff=0.01)
+    # debug
+    for i in range(len(suppr)):
+        skimage.io.imsave(os.path.join(outputFile, f"suppr_{i:04}.png"), img_as_ubyte(suppr[i], True))
+    for i in range(len(singles)):
+        skimage.io.imsave(os.path.join(outputFile, f"single_{i:04}.png"), img_as_ubyte(singles[i], True))
+    for i in range(len(multis)):
+        skimage.io.imsave(os.path.join(outputFile, f"multi_{i:04}.png"), img_as_ubyte(multis[i], True))
+
     bin_images, props = multiples_to_singles(singles, multis, single_prop, mult_prop)
     props = [regionprop_to_properties(rp) for rp in props]
 
     for i, bin_im in enumerate(bin_images):
-        skimage.io.imsave(os.path.join(outputFile, f"bin_{i:04}.png"), (255 * bin_im).astype(np.uint8))
+        #skimage.io.imsave(os.path.join(outputFile, f"bin_{i:04}.png"), (255 * bin_im).astype(np.uint8))
+        skimage.io.imsave(os.path.join(outputFile, f"bin_{i:04}.png"), img_as_ubyte(bin_im, True))
 
     original = rgb2gray(original)
     original_images = [apply_mask_gray(original, prop) for prop in props]
