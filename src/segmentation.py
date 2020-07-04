@@ -486,6 +486,61 @@ def cut_image(original_img, prop, nb_labels):
 
     return pick_results(results, nb_labels)
 
+
+def cut_image_with_contours(image, old_prop, padding=2):
+    image = image.astype(np.uint8) * 255
+
+    cnts = cv2.findContours(image, cv2.RETR_EXTERNAL,
+                            cv2.CHAIN_APPROX_SIMPLE)
+    cnts = cnts[0]
+
+    if len(cnts) < 2:
+        return [image], [old_prop]
+
+    top_y = old_prop.bbox[0]
+    top_x = old_prop.bbox[1]
+
+    merge_id = old_prop.label
+    if isinstance(old_prop, Properties):
+        merge_id = old_prop.merge_id
+
+    new_segments = []
+    new_props = []
+    for cnt in cnts:
+        # If object is too small, discard it
+        if cv2.contourArea(cnt) < 30:
+            continue
+
+        x, y, w, h = cv2.boundingRect(cnt)
+        x = np.clip(x - padding, 0, w)
+        y = np.clip(y - padding, 0, h)
+        w = np.clip(w + padding, 0, w)
+        h = np.clip(h + padding, 0, h)
+
+        # Create new segment
+        new_segment = image[y:y + h, x:x + h].copy()
+        new_prop = Properties(
+            old_prop.label + 1,
+            merge_id,
+            int(w),
+            int(h),
+            0,
+            top_x,
+            top_y
+        )
+
+        # update the bbox to global image coords
+        new_prop.update_bbox((int(x), int(y), int(x + w), int(y + h)))
+
+        # update the bbox to global image coords
+        new_prop.update_centroid((int((x + x + w) // 2), int((y + y + h) // 2)))
+
+        new_segments.append(new_segment)
+        new_props.append(new_prop)
+
+    return new_segments, new_props
+
+
 def multiples_to_singles(singles, original_imgs, props, m_props):
     """
     from list of single images and list of multiple images
@@ -526,8 +581,9 @@ def multiples_to_singles(singles, original_imgs, props, m_props):
                 tmp_props.extend(res_props)
                 length += 1
             else: # fail to cut
-                singles.append(tmp[0])
-                props.append(tmp_props[0])
+                res, res_props = cut_image_with_contours(tmp[0], tmp_props[0])
+                singles.extend(res)
+                props.extend(res_props)
 
         else:
             singles.append(tmp[0])
