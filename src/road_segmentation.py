@@ -32,16 +32,14 @@ def save_image(img, name):
 
 # In[59]:
 
-
 def otsu_image(image):
     gray = 1 - image
     threshold = threshold_otsu(gray.reshape(-1, gray.shape[1], 1))
 
-    return binary_dilation(gray > threshold)
+    return gray > threshold
 
 
 # In[3]:
-
 
 def filter_noise(img, threshold=0.3, m_w=40):
     label_image = label(img)
@@ -57,14 +55,18 @@ def filter_noise(img, threshold=0.3, m_w=40):
         ratio = region.minor_axis_length / region.major_axis_length
 
         box = label_image[bbox[0]:bbox[2],bbox[1]:bbox[3]]
-        
-        if ratio < threshold or max(h, w) > m_w or region.extent < threshold or min(w, h) / max(w, h) < threshold:
+
+        remove = ratio < threshold or max(h, w) > m_w or region.extent < threshold
+
+        if max(w, h) != 0 and min(w, h) / max(w, h) < threshold:
+            remove = True
+
+        if remove:
             sm = img[bbox[0]:bbox[2],bbox[1]:bbox[3]]
             sm[box == i + 1] = 0
             continue
 
     return img
-
 
 # In[61]:
 
@@ -79,15 +81,14 @@ def preprocess_image(image, grid, exterior):
     im = filters.gaussian(im, 2)
     im = feature.canny(im)
     im = im ^ filter_noise(im ^ remove_small_objects(im, 5000), threshold=0.1, m_w=100)
-    im = dilation(im)
+    im = binary_dilation(binary_dilation(im))
     im = im ^ filter_noise(im ^ remove_small_objects(im, 10000), threshold=0.1, m_w=100)
     im = dilation(im, disk(2))
-    
+
     return original, im
 
 
 # In[45]:
-
 
 def dist_map(binary, exterior):
     binary = 1 - binary
@@ -112,6 +113,7 @@ def dist_map(binary, exterior):
         label_filter = label_box == reg.label
 
         if dists_box[label_filter].shape[0] == 0:
+            print(i+1, np.unique(label_box))
             continue
         
         h = bbox[2] - bbox[0]
@@ -141,7 +143,6 @@ def get_useless_edges(n_dist, exterior):
 
 # In[50]:
 
-
 def filter_edges(edges):
     edges = edges.copy()
     labels = label(1 - edges, connectivity=1)
@@ -151,7 +152,6 @@ def filter_edges(edges):
 
         nb_pix = reg.minor_axis_length * reg.major_axis_length
         pc_pix = reg.area / max(nb_pix, 1)
-
 
         if reg.area > 1000000:
             continue
@@ -169,24 +169,32 @@ def filter_edges(edges):
 
 # In[52]:
 
-
-def filter_roads(binary, edges, exterior, closing=False):
+def filter_roads(binary, edges, exterior, filtering=False, closing=False):
     filtered = binary.copy()
     filtered[edges > 0] = True
 
+    if filtering:
+        filtered = binary_closing(binary_opening(filtered), disk(5))
+
     if closing:
-        filtered = binary_closing(binary_opening(filtered), disk(3))
+        filtered = binary_closing(filtered, disk(15))
 
     filtered[exterior > 0] = 1
     labels = label(1 - filtered, connectivity=1)
 
     for i, reg in enumerate(regionprops(labels)):
         bbox = reg.bbox
+        sh = reg.coords[:,0]
+        sw = reg.coords[:,1]
 
         h = bbox[2] - bbox[0]
         w = bbox[3] - bbox[1]
 
         ratio = reg.minor_axis_length / max(reg.major_axis_length, 1)
+
+        if ratio > 0.3 and reg.area / reg.convex_area > 0.7:
+            filtered[sh,sw] = 1
+            continue
 
         if reg.perimeter > 8000 and (reg.perimeter / reg.area) < 0.05:
             continue
@@ -195,12 +203,7 @@ def filter_roads(binary, edges, exterior, closing=False):
             continue
 
         if max(w, h) < 3000 and (w + h) < 6000:
-            label_box = labels[bbox[0]:bbox[2],bbox[1]:bbox[3]]
-            dists_box = filtered[bbox[0]:bbox[2],bbox[1]:bbox[3]]
-
-            label_filter = label_box == (i + 1)
-
-            dists_box[label_filter] = 1
+            filtered[sh,sw] = 1
 
     return filtered
 
@@ -225,12 +228,14 @@ def process_file(inputFile, gridFile, exteriorFile, outputFile):
     edges = remove_small_holes(edges, 1000)
     edges_filtered = filter_edges(edges)
 
+    v2 = filter_roads(binary, edges, exterior, closing=True)
+    v2_filtered = filter_roads(binary, edges_filtered, exterior, filtering=True)
+    v2_closed = filter_roads(binary, edges, exterior)
 
-    v2 = filter_roads(binary, edges, exterior)
-    v2_filtered = filter_roads(binary, edges_filtered, exterior, True)
-    v2_diff = filter_edges((1 - (v2_filtered ^ v2))) > 0
+    v2[(filter_edges(1 - v2_closed ^ v2) == 0)] = False
 
-    result = v2 ^ v2_diff
+    v2_diff = filter_edges((1 - (v2_filtered ^ v2))) == 1
+    result = np.bitwise_not(v2 & v2_diff)
 
     # postprocessing
     result = remove_small_holes(result, 10000)

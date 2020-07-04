@@ -102,6 +102,7 @@ class GridDetectionStep(GenericStep):
         return [
             pipeline.create_file("exterior", "01_exterior.png"),
             pipeline.create_file("grid", "01_grid.png"),
+            pipeline.create_file("thinGrid", "01_grid_thin.png"),
         ]
 
 
@@ -152,6 +153,7 @@ class HeatmapStep(GenericStep):
             pipeline.file("preprocessed"),
             pipeline.file("roads"),
             pipeline.file("grid"),
+            pipeline.file("thinGrid"),
             pipeline.file("exterior"),
         ]
 
@@ -169,6 +171,7 @@ class SegmentationStep(GenericStep):
 
     def input_files(self, pipeline):
         return [
+            pipeline.input_file(),
             pipeline.file("heatmaps"),
             pipeline.file("roads"),
         ]

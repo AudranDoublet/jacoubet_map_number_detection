@@ -1,7 +1,12 @@
+import os
 import math
 import skimage.io
 import cv2
-from skimage.morphology import binary_dilation
+from skimage.morphology import binary_dilation, dilation
+from skimage.color import rgb2gray
+from skimage import img_as_ubyte
+
+from grid_detection import otsu_image
 
 def find_nearest_white(img, target):
     nonzero = cv2.findNonZero(img)
@@ -185,18 +190,38 @@ def show_images(objects, col=5):
     plt.show()
 
 
+def remove_noise(images, properties=None):
+    shapes = [arr.shape for arr in images]
+    mean_shape = np.mean(shapes, axis=0)
+    k2 = mean_shape * 0.4
+    seuil = 33 # pixels
+
+    suppr = []
+    results = []
+    results_prop = []
+
+    for i, obj in enumerate(images):
+        if (obj.shape[0] <= k2[0] or obj.shape[1] <= k2[1] or obj.shape[1] + obj.shape[0] < seuil):
+            suppr.append(obj)
+        else:
+            results.append(obj)
+            results_prop.append(properties[i])
+
+    return results, results_prop, suppr
+
 # filtrer: prendre uniquement les images avec un seul nombre (fonctionne uniquement si une majorité de nombres simples)
-def extract_single_numbers(images, properties=None):
+def extract_single_numbers(images, properties=None, digit_coeff=1e-1):
     # compute mean of shapes
     shapes = [arr.shape for arr in images]
     mean_shape = np.mean(shapes, axis=0)
 
     # apply filter
-    k = mean_shape * 2 / 3
+    k = mean_shape * 0.38
     singles, multiples = [], []
+    suppr = []
     singles_prop, multiples_prop = [], []
     for i, obj in enumerate(images):
-        if (mean_shape[0] - k[0] <= obj.shape[0] and obj.shape[0] <= mean_shape[0] + k[0] and mean_shape[1] - k[1] <= obj.shape[1] and obj.shape[1] <= mean_shape[1] + k[1]):
+        if (obj.shape[0] <= mean_shape[0] - k[0] or obj.shape[1] <= mean_shape[1] - k[1]):
             singles.append(obj)
             if properties:
                 singles_prop.append(properties[i])
@@ -529,23 +554,56 @@ def props_to_dict(props, angle):
         'orientation': props.orientation,
     }
 
-def process_from_heatmaps(inputFile, roadFile, outputFile):
-    heatmap = load_image(inputFile)
+def apply_mask_binary(original, mask, prop):
+    segment = rgb2gray(original[prop.bbox[0]:prop.bbox[2], prop.bbox[1]:prop.bbox[3]])
+    bin_segment = binary_dilation(otsu_image(segment))
+
+    bin_segment[~mask] = 0
+
+    return bin_segment
+
+
+def apply_mask_gray(original, prop):
+    segment = (255 * original[prop.bbox[0]:prop.bbox[2], prop.bbox[1]:prop.bbox[3]]).astype(np.uint8)
+    segment = dilation(255 - segment)
+    denoised = cv2.fastNlMeansDenoising(segment)
+
+    return denoised
+
+
+def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
+    original = load_image(inputFile)
+    heatmap = load_image(heatmapFile)
     roads = 255 - load_image(roadFile)
 
-    rectangles = create_rectangles_from_heatmap(heatmap)
-
-    images, props = process(heatmap, None, ret_props=True)
-
-    # cut multiple images to single one
-    singles, multis, single_prop, mult_prop = extract_single_numbers(images, props)
-    images, props = multiples_to_singles(singles, multis, single_prop, mult_prop)
-    props = list(map(lambda rp: regionprop_to_properties(rp), props))
-
-    import os
     os.makedirs(outputFile, exist_ok=True)
 
-    for i, image in enumerate(images):
+    images, props = process(heatmap, None, ret_props=True)
+    # Binarize segments and apply mask from original image
+    bin_images = [apply_mask_binary(original, mask, prop) for mask, prop in zip(images, props)]
+
+    bin_images, props2, suppr = remove_noise(bin_images, props)
+    # cut multiple images to single one
+    singles, multis, single_prop, mult_prop = extract_single_numbers(bin_images, props2, digit_coeff=0.01)
+    # debug
+    for i in range(len(suppr)):
+        skimage.io.imsave(os.path.join(outputFile, f"suppr_{i:04}.png"), img_as_ubyte(suppr[i], True))
+    for i in range(len(singles)):
+        skimage.io.imsave(os.path.join(outputFile, f"single_{i:04}.png"), img_as_ubyte(singles[i], True))
+    for i in range(len(multis)):
+        skimage.io.imsave(os.path.join(outputFile, f"multi_{i:04}.png"), img_as_ubyte(multis[i], True))
+
+    bin_images, props = multiples_to_singles(singles, multis, single_prop, mult_prop)
+    props = [regionprop_to_properties(rp) for rp in props]
+
+    for i, bin_im in enumerate(bin_images):
+        #skimage.io.imsave(os.path.join(outputFile, f"bin_{i:04}.png"), (255 * bin_im).astype(np.uint8))
+        skimage.io.imsave(os.path.join(outputFile, f"bin_{i:04}.png"), img_as_ubyte(bin_im, True))
+
+    original = rgb2gray(original)
+    original_images = [apply_mask_gray(original, prop) for prop in props]
+
+    for i, image in enumerate(original_images):
         pos = props[i].centroid
         pos = (int(pos[0]), int(pos[1]))
 
@@ -563,10 +621,11 @@ def process_from_heatmaps(inputFile, roadFile, outputFile):
 
         image = skimage.transform.rotate(image * 1.0, -angle, resize=True)
 
-
         with open(os.path.join(outputFile, f"{i:04}.json"), 'w') as f:
-            json.dump(props_to_dict(props[i], angle), f)
-        skimage.io.imsave(os.path.join(outputFile, f"{i:04}.png"), (image * 255).astype(np.uint8))
+            json.dump(props_to_dict(props[i], 0), f)
+
+        # Convert segment to grayscale and normalize for classification model
+        skimage.io.imsave(os.path.join(outputFile, f"{i:04}.png"), image.astype(np.uint8))
 
 
 #process_from_heatmaps("output_dir/03_heatmaps.png", "results")

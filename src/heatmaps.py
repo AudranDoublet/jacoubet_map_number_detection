@@ -50,10 +50,11 @@ def area_ecc_filter(im, area_bounds, ecc_bounds, ext_bounds=(0.0, 1.0)):
 
 
 class HeatmapWorker:
-    def __init__(self, inputFile, roadFile, gridFile, exteriorFile, outputFile):
+    def __init__(self, inputFile, roadFile, gridFile, thinGridFile, exteriorFile, outputFile):
         self.image = imread(inputFile)
         self.road_mask = imread(roadFile) > 0
         self.grid_mask = imread(gridFile) > 0
+        self.thin_grid_mask = imread(thinGridFile) > 0
         self.exterior_mask = imread(exteriorFile) > 0
         self.output_file = outputFile
 
@@ -66,26 +67,6 @@ class HeatmapWorker:
         return im
 
 
-    def im_detect_grid(self, dilation_selem=disk(2), line_length=500, line_gaps=30):
-        im = rgb2gray(self.image)
-        im = binary_image(im)
-        im = binary_dilation(im, dilation_selem)
-
-        lines = probabilistic_hough_line(im, line_length=line_length, line_gap=line_gaps)
-        grid_mask = np.zeros_like(im, dtype=np.bool)
-
-        for p0, p1 in lines:
-            # ignore diagonal lines
-            a = (p1[0]-p0[0]) / ((p1[1]-p0[1]) or float('nan'))
-            if abs(a) > 1e-1:
-                continue
-
-            rr, cc, val = line_aa(*p0[::-1], *p1[::-1])
-            grid_mask[rr, cc] = True
-
-        return grid_mask
-
-
     def im_detect_lines_area(self, lines, valid_area=50):
         lines = 1-lines
         im = -distance_transform_edt(lines)
@@ -96,8 +77,7 @@ class HeatmapWorker:
         im = rgb2gray(im)
 
         # remove the grid from the image
-        # FIXME @Sami why recalculate the grid?
-        mask_grid = self.im_detect_grid()
+        mask_grid = self.thin_grid_mask # FIXME dilate ?
         im[mask_grid] = im.max()
 
         # remove exterior
