@@ -553,7 +553,7 @@ def apply_mask_gray(original, prop):
 def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
     original = load_image(inputFile)
     heatmap = load_image(heatmapFile)
-    roads = 255 - load_image(roadFile)
+    roads = load_image(roadFile)
 
     os.makedirs(outputFile, exist_ok=True)
 
@@ -572,29 +572,32 @@ def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
     original = rgb2gray(original)
     original_images = [apply_mask_gray(original, prop) for prop in props]
 
+    size = 40
+
     for i, image in enumerate(original_images):
         pos = props[i].centroid
         pos = (int(pos[0]), int(pos[1]))
 
-        nearest_road = find_nearest_white(roads[pos[0]-30:pos[0]+30, pos[1]-30:pos[1]+30], [30, 30])
+        nearest_road = find_nearest_white(roads[pos[0]-size:pos[0]+size, pos[1]-size:pos[1]+size], [size, size])
 
-        if nearest_road is None:
-            continue
+        if nearest_road is not None:
+            nearest_road = [nearest_road[1], nearest_road[0]]
 
-        nearest_road = [nearest_road[1], nearest_road[0]]
+            nearest_road[0] += pos[0] - size
+            nearest_road[1] += pos[1] - size
 
-        nearest_road[0] += pos[0] - 30
-        nearest_road[1] += pos[1] - 30
+            angle = segment_orientation(roads[ nearest_road[0]-size:nearest_road[0]+size, nearest_road[1]-size:nearest_road[1]+size ]) % 90
+        else:
+            angle = 0
 
-        angle = segment_orientation(roads[ nearest_road[0]-30:nearest_road[0]+30, nearest_road[1]-30:nearest_road[1]+30 ])
-
-        image = skimage.transform.rotate(image * 1.0, -angle, resize=True)
+        rotate = skimage.transform.rotate(image * 1.0, -angle, resize=True)
 
         with open(os.path.join(outputFile, f"{i:04}.json"), 'w') as f:
             json.dump(props_to_dict(props[i], 0), f)
 
         # Convert segment to grayscale and normalize for classification model
-        skimage.io.imsave(os.path.join(outputFile, f"{i:04}.png"), image.astype(np.uint8))
+        skimage.io.imsave(os.path.join(outputFile, f"{i:04}_unrotate.png"), image.astype(np.uint8))
+        skimage.io.imsave(os.path.join(outputFile, f"{i:04}.png"), rotate.astype(np.uint8))
 
 
 #process_from_heatmaps("output_dir/03_heatmaps.png", "results")
