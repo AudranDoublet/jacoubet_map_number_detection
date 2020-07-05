@@ -863,6 +863,10 @@ def postprocess_filter(outputFile, props, original_images):
             skimage.io.imsave(os.path.join(outputFile, f"postprocess_suppr_small_holes_{current:04}.png"), img_as_ubyte(img, True))
             current += 1
 
+        elif binary.shape[0] + binary.shape[1] > 64:
+            skimage.io.imsave(os.path.join(outputFile, f"postprocess_suppr_too_big_{current:04}.png"), img_as_ubyte(img, True))
+            current += 1
+
         else:
             out_prop.append(p)
             out_img.append(img)
