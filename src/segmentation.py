@@ -575,8 +575,8 @@ def pick_results(results, nb_labels):
         nb_labels += 1
         new_properties.append(
             Properties(
-                merge_id,
                 nb_labels,
+                merge_id,
                 properties[i].minor_axis_length,
                 properties[i].major_axis_length,
                 properties[i].orientation,
