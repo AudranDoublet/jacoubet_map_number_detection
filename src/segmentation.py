@@ -944,7 +944,7 @@ def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
         rotate = skimage.transform.rotate(image * 1.0, -angle, resize=True)
 
         with open(os.path.join(outputFile, f"{i:04}.json"), 'w') as f:
-            json.dump(props_to_dict(props[i], 0), f)
+            json.dump(props_to_dict(props[i], angle), f)
 
         # Convert segment to grayscale and normalize for classification model
         skimage.io.imsave(os.path.join(outputFile, f"{i:04}_unrotate.png"), image.astype(np.uint8))
