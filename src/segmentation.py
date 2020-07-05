@@ -841,16 +841,32 @@ def postprocess_filter_distance(outputFile, props, original_images):
     centroids = np.array([prop.centroid for prop in props])
 
     knn = NearestNeighbors(n_neighbors=4).fit(centroids)
-    distances, indices = knn.kneighbors(centroids)
+    distances, _ = knn.kneighbors(centroids)
 
-    for distances, indices, p, img in zip(distances, indices, props, original_images):
-        binary = img > threshold_otsu(img)
-
+    for distances, p, img in zip(distances, props, original_images):
         if distances[1] > 500:
             skimage.io.imsave(os.path.join(outputFile, f"postprocess_suppr_far_away_{current:04}.png"), img_as_ubyte(img, True))
             current += 1
-            continue
 
+        else:
+            out_prop.append(p)
+            out_img.append(img)
+
+    return out_prop, out_img
+
+
+def postprocess_filter_similar(outputFile, props, original_images):
+    current = 0
+
+    out_prop = []
+    out_img  = []
+
+    centroids = np.array([prop.centroid for prop in props])
+
+    knn = NearestNeighbors(n_neighbors=4).fit(centroids)
+    distances, indices = knn.kneighbors(centroids)
+
+    for distances, indices, p, img in zip(distances, indices, props, original_images):
         self_idx = indices[0]
         psnr = 1e9
 
@@ -868,7 +884,7 @@ def postprocess_filter_distance(outputFile, props, original_images):
 
             psnr = min(peak_signal_noise_ratio(a, b), psnr)
 
-        if psnr > 9:
+        if psnr > 9 and psnr < 1e9:
             skimage.io.imsave(os.path.join(outputFile, f"postprocess_suppr_neighbors_too_similar_{current:04}.png"), img_as_ubyte(img, True))
             current += 1
 
@@ -924,7 +940,10 @@ def postprocess_filter(outputFile, props, original_images):
             out_prop.append(p)
             out_img.append(img)
 
-    return postprocess_filter_distance(outputFile, out_prop, out_img)
+    out_prop, out_img = postprocess_filter_similar(outputFile, out_prop, out_img)
+    out_prop, out_img = postprocess_filter_distance(outputFile, out_prop, out_img)
+
+    return out_prop, out_img
 
 
 def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
