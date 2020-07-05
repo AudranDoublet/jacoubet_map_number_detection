@@ -377,7 +377,6 @@ def extract_single_numbers(images, properties=None):
     # apply filter
     k = mean_shape * K_SEUIL_MULTIPLE
     singles, multiples = [], []
-    suppr = []
     singles_prop, multiples_prop = [], []
     for i, obj in enumerate(images):
         if (obj.shape[0] <= k[0] or obj.shape[1] <= k[1]):
@@ -945,35 +944,74 @@ def postprocess_filter(outputFile, props, original_images):
 
     return out_prop, out_img
 
+def get_original_masked(original, heatmap):
+    segment = rgb2gray(original)
+    segment = (255 * segment).astype(np.uint8)
+    for i in range(segment.shape[0]):
+        for j in range(segment.shape[1]):
+            if heatmap[i][j] == 0:
+                segment[i][j] = 0
+    return segment
+
+
+from PIL import ImageFont, ImageDraw, Image
+def save_processed_heatmap(segment, props, outputFile, idx):
+    img = Image.fromarray(segment)
+    draw = ImageDraw.Draw(img)
+
+    for prop in props:
+        bbox = prop.bbox
+        box = [bbox[1], bbox[0], bbox[3], bbox[2]]
+        draw.rectangle(box, outline=150)
+
+    img.save(os.path.join(outputFile, f"heatmaps_objects_{idx}.png"))
 
 def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
+    DEBUG = True
     original = load_image(inputFile)
     heatmap = load_image(heatmapFile)
     roads = load_image(roadFile)
+    if DEBUG:
+        masked = get_original_masked(original, heatmap)
 
     os.makedirs(outputFile, exist_ok=True)
 
     images, props = process(heatmap, None, ret_props=True)
+    if DEBUG:
+        save_processed_heatmap(masked, props, outputFile, 1)
+
     # Binarize segments and apply mask from original image
     bin_images = [apply_mask_binary(original, mask, prop) for mask, prop in zip(images, props)]
+    if DEBUG:
+        for i in range(len(bin_images)):
+            skimage.io.imsave(os.path.join(outputFile, f"bin1_{i:04}.png"), img_as_ubyte(bin_images[i], True))
 
     bin_images, props2, suppr = remove_noise(bin_images, props)
+    if DEBUG:
+        save_processed_heatmap(masked, props2, outputFile, 2)
+
     # cut multiple images to single one
     singles, multis, single_prop, mult_prop = extract_single_numbers(bin_images, props2)
-    # debug
-    for i in range(len(suppr)):
-        skimage.io.imsave(os.path.join(outputFile, f"suppr_{i:04}.png"), img_as_ubyte(suppr[i], True))
-    for i in range(len(singles)):
-        skimage.io.imsave(os.path.join(outputFile, f"single_{i:04}.png"), img_as_ubyte(singles[i], True))
-    for i in range(len(multis)):
-        skimage.io.imsave(os.path.join(outputFile, f"multi_{i:04}.png"), img_as_ubyte(multis[i], True))
+    if DEBUG:
+        save_processed_heatmap(masked, single_prop + mult_prop, outputFile, 3)
+
+        for i in range(len(suppr)):
+            skimage.io.imsave(os.path.join(outputFile, f"suppr_{i:04}.png"), img_as_ubyte(suppr[i], True))
+        for i in range(len(singles)):
+            skimage.io.imsave(os.path.join(outputFile, f"single_{i:04}.png"), img_as_ubyte(singles[i], True))
+        for i in range(len(multis)):
+            skimage.io.imsave(os.path.join(outputFile, f"multi_{i:04}.png"), img_as_ubyte(multis[i], True))
 
     bin_images, props = multiples_to_singles(singles, multis, single_prop, mult_prop, outputFile)
+    if DEBUG:
+        save_processed_heatmap(masked, props, outputFile, 4)
 
     bin_images_end, props_end, suppr_end = remove_end_noise(bin_images, props)
-    # debug
-    #for i in range(len(suppr_end)):
-    #    skimage.io.imsave(os.path.join(outputFile, f"suppr-end_{i:04}.png"), img_as_ubyte(suppr_end[i], True))
+    if DEBUG:
+        save_processed_heatmap(masked, props_end, outputFile, 5)
+
+        for i in range(len(suppr_end)):
+            skimage.io.imsave(os.path.join(outputFile, f"suppr-end_{i:04}.png"), img_as_ubyte(suppr_end[i], True))
 
     props = [regionprop_to_properties(rp) for rp in props_end]
 
@@ -985,6 +1023,8 @@ def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
     original_images = [apply_mask_gray(original, prop) for prop in props]
 
     props, original_images = postprocess_filter(outputFile, props, original_images)
+    if DEBUG:
+        save_processed_heatmap(masked, props, outputFile, 6)
 
     size = 40
 
