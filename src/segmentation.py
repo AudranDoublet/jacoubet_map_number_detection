@@ -363,16 +363,8 @@ def remove_noise(images, properties=None):
     results_prop = []
 
     for i, obj in enumerate(images):
-
-        if check_is_striped_zone(obj):
-            suppr.append(obj)
-
-        elif (obj.shape[0] <= k2[0] or obj.shape[1] <= k2[1] or obj.shape[1] + obj.shape[0] < seuil):
-            suppr.append(obj)
-
-        else:
-            results.append(obj)
-            results_prop.append(properties[i])
+        results.append(obj)
+        results_prop.append(properties[i])
 
     return results, results_prop, suppr
 
@@ -385,7 +377,6 @@ def extract_single_numbers(images, properties=None):
     # apply filter
     k = mean_shape * K_SEUIL_MULTIPLE
     singles, multiples = [], []
-    suppr = []
     singles_prop, multiples_prop = [], []
     for i, obj in enumerate(images):
         if (obj.shape[0] <= k[0] or obj.shape[1] <= k[1]):
@@ -426,6 +417,7 @@ def filter_images(objects, props):
 
     return real_objects, real_props
 
+
 def process(img, marked, elt = skimage.morphology.disk(1), inversed=True, ret_props=False):
     """
     From the original image, the marks and the structural element for closure,
@@ -435,7 +427,7 @@ def process(img, marked, elt = skimage.morphology.disk(1), inversed=True, ret_pr
     closed = fill_holes(extracted, elt)
     objects, props = get_objects(closed, True)
 
-    real_objects, real_props = filter_images(objects, props)
+    real_objects, real_props = objects, props
     turned = real_objects
 
     if ret_props:
@@ -735,7 +727,7 @@ def multiples_to_singles(singles, original_imgs, props, m_props, outputFile):
             tmp.extend(res)
             tmp_props.extend(res_props)
         else: # fail to cut
-            skimage.io.imsave(f"fail_cut_{i:04}.png", img_as_ubyte(img, True))
+            skimage.io.imsave(os.path.join(outputFile, "fail_cut_{i:04}.png"), img_as_ubyte(img, True))
             tmp.append(img)
             tmp_props.append(m_props[i])
 
@@ -825,6 +817,82 @@ def apply_mask_gray(original, prop):
 
     return denoised
 
+from sklearn.neighbors import NearestNeighbors
+from skimage.metrics import peak_signal_noise_ratio
+
+
+def recreate_image_with_shape(image, shape):
+    result = np.zeros(shape, dtype=image.dtype)
+
+    dy = (shape[0] - image.shape[0]) // 2
+    dx = (shape[1] - image.shape[1]) // 2
+
+    result[dy:dy+image.shape[0], dx:dx+image.shape[1]] = image
+    return result
+
+
+def postprocess_filter_distance(outputFile, props, original_images):
+    current = 0
+
+    out_prop = []
+    out_img  = []
+
+    centroids = np.array([prop.centroid for prop in props])
+
+    knn = NearestNeighbors(n_neighbors=4).fit(centroids)
+    distances, _ = knn.kneighbors(centroids)
+
+    for distances, p, img in zip(distances, props, original_images):
+        if distances[1] > 500:
+            skimage.io.imsave(os.path.join(outputFile, f"postprocess_suppr_far_away_{current:04}.png"), img_as_ubyte(img, True))
+            current += 1
+
+        else:
+            out_prop.append(p)
+            out_img.append(img)
+
+    return out_prop, out_img
+
+
+def postprocess_filter_similar(outputFile, props, original_images):
+    current = 0
+
+    out_prop = []
+    out_img  = []
+
+    centroids = np.array([prop.centroid for prop in props])
+
+    knn = NearestNeighbors(n_neighbors=4).fit(centroids)
+    distances, indices = knn.kneighbors(centroids)
+
+    for distances, indices, p, img in zip(distances, indices, props, original_images):
+        self_idx = indices[0]
+        psnr = 1e9
+
+        for dist, idx in zip(distances[1:], indices[1:]):
+            if dist > 500:
+                break
+
+            a = original_images[self_idx]
+            b = original_images[idx]
+
+            shape = (max(a.shape[0], b.shape[0]), max(a.shape[1], b.shape[1]))
+
+            a = recreate_image_with_shape(a, shape)
+            b = recreate_image_with_shape(b, shape)
+
+            psnr = min(peak_signal_noise_ratio(a, b), psnr)
+
+        if psnr > 9 and psnr < 1e9:
+            skimage.io.imsave(os.path.join(outputFile, f"postprocess_suppr_neighbors_too_similar_{current:04}.png"), img_as_ubyte(img, True))
+            current += 1
+
+        else:
+            out_prop.append(p)
+            out_img.append(img)
+
+    return out_prop, out_img
+
 
 def postprocess_filter(outputFile, props, original_images):
     current = 0
@@ -871,37 +939,79 @@ def postprocess_filter(outputFile, props, original_images):
             out_prop.append(p)
             out_img.append(img)
 
+    out_prop, out_img = postprocess_filter_similar(outputFile, out_prop, out_img)
+    out_prop, out_img = postprocess_filter_distance(outputFile, out_prop, out_img)
+
     return out_prop, out_img
 
+def get_original_masked(original, heatmap):
+    segment = rgb2gray(original)
+    segment = (255 * segment).astype(np.uint8)
+    for i in range(segment.shape[0]):
+        for j in range(segment.shape[1]):
+            if heatmap[i][j] == 0:
+                segment[i][j] = 0
+    return segment
+
+
+from PIL import ImageFont, ImageDraw, Image
+def save_processed_heatmap(segment, props, outputFile, idx):
+    img = Image.fromarray(segment)
+    draw = ImageDraw.Draw(img)
+
+    for prop in props:
+        bbox = prop.bbox
+        box = [bbox[1], bbox[0], bbox[3], bbox[2]]
+        draw.rectangle(box, outline=150)
+
+    img.save(os.path.join(outputFile, f"heatmaps_objects_{idx}.png"))
 
 def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
+    DEBUG = True
     original = load_image(inputFile)
     heatmap = load_image(heatmapFile)
     roads = load_image(roadFile)
+    if DEBUG:
+        masked = get_original_masked(original, heatmap)
 
     os.makedirs(outputFile, exist_ok=True)
 
     images, props = process(heatmap, None, ret_props=True)
+    if DEBUG:
+        save_processed_heatmap(masked, props, outputFile, 1)
+
     # Binarize segments and apply mask from original image
     bin_images = [apply_mask_binary(original, mask, prop) for mask, prop in zip(images, props)]
+    if DEBUG:
+        for i in range(len(bin_images)):
+            skimage.io.imsave(os.path.join(outputFile, f"bin1_{i:04}.png"), img_as_ubyte(bin_images[i], True))
 
     bin_images, props2, suppr = remove_noise(bin_images, props)
+    if DEBUG:
+        save_processed_heatmap(masked, props2, outputFile, 2)
+
     # cut multiple images to single one
     singles, multis, single_prop, mult_prop = extract_single_numbers(bin_images, props2)
-    # debug
-    for i in range(len(suppr)):
-        skimage.io.imsave(os.path.join(outputFile, f"suppr_{i:04}.png"), img_as_ubyte(suppr[i], True))
-    for i in range(len(singles)):
-        skimage.io.imsave(os.path.join(outputFile, f"single_{i:04}.png"), img_as_ubyte(singles[i], True))
-    for i in range(len(multis)):
-        skimage.io.imsave(os.path.join(outputFile, f"multi_{i:04}.png"), img_as_ubyte(multis[i], True))
+    if DEBUG:
+        save_processed_heatmap(masked, single_prop + mult_prop, outputFile, 3)
+
+        for i in range(len(suppr)):
+            skimage.io.imsave(os.path.join(outputFile, f"suppr_{i:04}.png"), img_as_ubyte(suppr[i], True))
+        for i in range(len(singles)):
+            skimage.io.imsave(os.path.join(outputFile, f"single_{i:04}.png"), img_as_ubyte(singles[i], True))
+        for i in range(len(multis)):
+            skimage.io.imsave(os.path.join(outputFile, f"multi_{i:04}.png"), img_as_ubyte(multis[i], True))
 
     bin_images, props = multiples_to_singles(singles, multis, single_prop, mult_prop, outputFile)
+    if DEBUG:
+        save_processed_heatmap(masked, props, outputFile, 4)
 
     bin_images_end, props_end, suppr_end = remove_end_noise(bin_images, props)
-    # debug
-    #for i in range(len(suppr_end)):
-    #    skimage.io.imsave(os.path.join(outputFile, f"suppr-end_{i:04}.png"), img_as_ubyte(suppr_end[i], True))
+    if DEBUG:
+        save_processed_heatmap(masked, props_end, outputFile, 5)
+
+        for i in range(len(suppr_end)):
+            skimage.io.imsave(os.path.join(outputFile, f"suppr-end_{i:04}.png"), img_as_ubyte(suppr_end[i], True))
 
     props = [regionprop_to_properties(rp) for rp in props_end]
 
@@ -913,6 +1023,8 @@ def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
     original_images = [apply_mask_gray(original, prop) for prop in props]
 
     props, original_images = postprocess_filter(outputFile, props, original_images)
+    if DEBUG:
+        save_processed_heatmap(masked, props, outputFile, 6)
 
     size = 40
 
@@ -943,7 +1055,7 @@ def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
         rotate = skimage.transform.rotate(image * 1.0, -angle, resize=True)
 
         with open(os.path.join(outputFile, f"{i:04}.json"), 'w') as f:
-            json.dump(props_to_dict(props[i], 0), f)
+            json.dump(props_to_dict(props[i], angle), f)
 
         # Convert segment to grayscale and normalize for classification model
         skimage.io.imsave(os.path.join(outputFile, f"{i:04}_unrotate.png"), image.astype(np.uint8))
