@@ -736,7 +736,7 @@ def multiples_to_singles(singles, original_imgs, props, m_props, outputFile):
             tmp.extend(res)
             tmp_props.extend(res_props)
         else: # fail to cut
-            skimage.io.imsave(f"fail_cut_{i:04}.png", img_as_ubyte(img, True))
+            skimage.io.imsave(os.path.join(outputFile, "fail_cut_{i:04}.png"), img_as_ubyte(img, True))
             tmp.append(img)
             tmp_props.append(m_props[i])
 
