@@ -123,13 +123,11 @@ class HeatmapWorker:
         return im
 
 
-    def im_remove_small_aligned_objects(self, im, line_length=200, line_gap=25, threshold_size=128):
-        # FIXME: - it'd be better to filter the image to have only small objects, 
-        #          so we can decrease `line_length`, and increase `line_gap`
-        # FIXME-END
-        im = im.copy() # that's slow and useless, but it avoids modifying the image given by reference
+    def im_remove_small_aligned_objects(self, im, line_length=50, line_gap=50, threshold_size=128):
+        im = im.copy() # avoids modifying the image given by reference
+        smalls = im ^ remove_small_objects(im, 512)
 
-        lines = probabilistic_hough_line(im, line_length=line_length, line_gap=line_gap)
+        lines = probabilistic_hough_line(smalls, line_length=line_length, line_gap=line_gap)
         mask_lines = np.zeros_like(im, dtype=np.bool)
 
         # we draw a line joining the small objects of the image
