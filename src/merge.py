@@ -78,7 +78,7 @@ def sort_labels(label_list):
     vertical = np.array([-1, 0])
     angle = angle_between(v, vertical) * 180 / np.pi
 
-    STEEP_SLOPE = 15
+    STEEP_SLOPE = 12
 
     if angle < STEEP_SLOPE:
         return labels_y_sorted
