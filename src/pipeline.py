@@ -171,7 +171,7 @@ class SegmentationStep(GenericStep):
 
     def input_files(self, pipeline):
         return [
-            pipeline.input_file(),
+            pipeline.file("preprocessed"),
             pipeline.file("heatmaps"),
             pipeline.file("roads"),
         ]

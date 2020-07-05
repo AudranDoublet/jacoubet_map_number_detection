@@ -2,8 +2,9 @@ import os
 import math
 import skimage.io
 import cv2
-from skimage.morphology import binary_dilation, dilation
+from skimage.morphology import binary_dilation, binary_closing, dilation, square, remove_small_holes
 from skimage.color import rgb2gray
+from skimage.filters import threshold_otsu
 from skimage import img_as_ubyte
 
 from grid_detection import otsu_image
@@ -24,6 +25,22 @@ def find_nearest_white(img, target):
     return nonzero[nearest_index][0]
 
 
+def get_nearest_road(pos, roads, search_radius):
+    mn = np.array(pos) - search_radius
+    mx = np.array(pos) + search_radius
+
+    road = roads[mn[0]:mx[0], mn[1]:mx[1]]
+    nearest_road = find_nearest_white(road, [search_radius, search_radius])
+
+    if nearest_road is None:
+        print("euh")
+        return None
+
+    nearest_road = np.array([nearest_road[1], nearest_road[0]])
+
+    return nearest_road + mn
+
+
 def segment_orientation(segment):
     segment = binary_dilation(segment > 0) ^ (segment > 0)
 
@@ -37,7 +54,7 @@ def segment_orientation(segment):
     x1 = nonzero[np.argmin(y_value)][0]
     x0 = nonzero[np.argmax(y_value)][0]
 
-    v_dir = (x1[0] - x0[0], x1[1] - x0[1])
+    v_dir = (x1[0] - x0[0], x0[1] - x1[1])
     angle = math.atan2(v_dir[1], v_dir[0])
 
     return math.degrees(angle)
@@ -195,6 +212,82 @@ def show_images(objects, col=5):
     plt.show()
 
 
+def count_lines(binary, threshold1=0.3, threshold2=0.5, threshold2_width=2):
+    count = 0
+
+    for reg in regionprops(label(binary)):
+        if reg.major_axis_length == 0.0:
+            continue
+
+        ratio = reg.minor_axis_length / reg.major_axis_length
+
+        if ratio < threshold1 or (ratio < threshold2 and reg.minor_axis_length <= threshold2_width):
+            count += 1
+
+    return count
+
+
+def check_is_striped_zone(binary):
+    line_count = count_lines(np.bitwise_not(binary)) + count_lines(binary)
+
+    bg_count = np.sum(1 - binary)
+
+    if line_count > 3:
+        return True
+
+    perimeter = sum([reg.perimeter for reg in regionprops(label(binary))])
+    min_lines = 2 if perimeter > 100 else 3
+
+    # create a larger image to avoid filling holes/close due to border
+    if count_lines(np.bitwise_not(binary)) < min_lines:
+        h, w = binary.shape
+        cls = 10
+
+        result = np.zeros((h + cls*2, w + cls*2))
+        result[cls:-cls,cls:-cls] = binary
+
+        binary = result
+        binary = binary != 0
+
+    # check if we are in a striped zone
+    sm1 = np.sum(binary_closing(binary, square(3)) ^ binary)
+    sm2 = np.sum(remove_small_holes(binary, 100) ^ binary)
+
+    def test(v, threshold=80, perc=0.3):
+        return v > threshold or v / np.sum(binary) > perc
+
+    return (test(sm1) and test(sm2)) or test(sm1, min(150, bg_count / 2), 0.5) or test(sm2, 160, 0.5)
+
+
+def tclosing(image):
+    h, w = image.shape
+    cls = 10
+
+    result = np.zeros((h + cls*2, w + cls*2))
+    result[cls:-cls,cls:-cls] = image
+
+    return binary_closing(result != 0, square(cls))
+
+def check_is_line(image):
+    closing = tclosing(image)
+
+    for reg in regionprops(label(closing)):
+        if reg.minor_axis_length / reg.major_axis_length < 0.2:
+            return True
+
+    return False
+
+
+def check_is_thick(binary):
+    for reg in regionprops(label(binary)):
+        perc = reg.area / reg.perimeter
+
+        if perc > 2.2:
+            return True
+
+    return False
+
+
 def remove_noise(images, properties=None):
     shapes = [arr.shape for arr in images]
     mean_shape = np.mean(shapes, axis=0)
@@ -206,8 +299,13 @@ def remove_noise(images, properties=None):
     results_prop = []
 
     for i, obj in enumerate(images):
-        if (obj.shape[0] <= k2[0] or obj.shape[1] <= k2[1] or obj.shape[1] + obj.shape[0] < seuil):
+
+        if check_is_striped_zone(obj):
             suppr.append(obj)
+
+        elif (obj.shape[0] <= k2[0] or obj.shape[1] <= k2[1] or obj.shape[1] + obj.shape[0] < seuil):
+            suppr.append(obj)
+
         else:
             results.append(obj)
             results_prop.append(properties[i])
@@ -664,6 +762,38 @@ def apply_mask_gray(original, prop):
     return denoised
 
 
+def postprocess_filter(outputFile, props, original_images):
+    current = 0
+
+    out_prop = []
+    out_img  = []
+
+    for p, img in zip(props, original_images):
+        binary = img > threshold_otsu(img)
+
+        if check_is_striped_zone(binary):
+            skimage.io.imsave(os.path.join(outputFile, f"postprocess_suppr_striped_{current:04}.png"), img_as_ubyte(img, True))
+            current += 1
+
+        elif np.max(img) < 110:
+            skimage.io.imsave(os.path.join(outputFile, f"postprocess_suppr_too_dark_{current:04}.png"), img_as_ubyte(img, True))
+            current += 1
+
+        elif check_is_line(binary):
+            skimage.io.imsave(os.path.join(outputFile, f"postprocess_suppr_line_{current:04}.png"), img_as_ubyte(img, True))
+            current += 1
+
+        elif check_is_thick(binary):
+            skimage.io.imsave(os.path.join(outputFile, f"postprocess_suppr_thick_{current:04}.png"), img_as_ubyte(img, True))
+            current += 1
+
+        else:
+            out_prop.append(p)
+            out_img.append(img)
+
+    return out_prop, out_img
+
+
 def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
     original = load_image(inputFile)
     heatmap = load_image(heatmapFile)
@@ -702,21 +832,31 @@ def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
     original = rgb2gray(original)
     original_images = [apply_mask_gray(original, prop) for prop in props]
 
+    props, original_images = postprocess_filter(outputFile, props, original_images)
+
     size = 40
 
     for i, image in enumerate(original_images):
         pos = props[i].centroid
         pos = (int(pos[0]), int(pos[1]))
 
-        nearest_road = find_nearest_white(roads[pos[0]-size:pos[0]+size, pos[1]-size:pos[1]+size], [size, size])
+        nearest_road = get_nearest_road(pos, roads, 100)
 
         if nearest_road is not None:
-            nearest_road = [nearest_road[1], nearest_road[0]]
+            mn = nearest_road - size
+            mx = nearest_road + size
 
-            nearest_road[0] += pos[0] - size
-            nearest_road[1] += pos[1] - size
+            sample = roads[mn[0]:mx[0], mn[1]:mx[1]]
+            sample = remove_small_holes(sample != 0, 512) * 1
 
-            angle = segment_orientation(roads[ nearest_road[0]-size:nearest_road[0]+size, nearest_road[1]-size:nearest_road[1]+size ]) % 90
+            angle = segment_orientation(sample)
+
+            if angle < -90:
+                angle += 180
+
+            if angle > 100:
+                angle -= 180
+
         else:
             angle = 0
 
