@@ -4,6 +4,8 @@ import sys
 
 from pathlib import Path
 
+import numpy as np
+
 class Label:
     def __init__(self, label=None, coords=None, bbox=None, merge_id=None, json_obj=None):
         if json_obj:
@@ -54,6 +56,36 @@ def save_labels(filepath, labels):
     with open(filepath, "w") as fs:
         json.dump(labels_json, fs)
 
+
+def unit_vector(vector):
+    """ Returns the unit vector of the vector.  """
+    return vector / np.linalg.norm(vector)
+
+
+def angle_between(v1, v2):
+    """ Return angle between two vectors """
+    v1_u = unit_vector(v1)
+    v2_u = unit_vector(v2)
+    return np.arccos(np.clip(np.dot(v1_u, v2_u), -1.0, 1.0))
+
+
+def sort_labels(label_list):
+    # Sort labels by decreasing y values
+    labels_y_sorted = sorted(label_list, key=lambda label: label.coords[0], reverse=True)  # y max
+    v = np.array(labels_y_sorted[-1].coords) - np.array(labels_y_sorted[0].coords)
+
+    # Vertical vector to evaluate if steep road
+    vertical = np.array([-1, 0])
+    angle = angle_between(v, vertical) * 180 / np.pi
+
+    STEEP_SLOPE = 15
+
+    if angle < STEEP_SLOPE:
+        return labels_y_sorted
+    # Sort labels by increasing x values
+    return sorted(label_list, key=lambda label: label.coords[1])  # x min
+
+
 def merge_labels(label_list):
     """
     have the same merge_id
@@ -78,8 +110,8 @@ def merge_labels(label_list):
 
         return [min_y, min_x, max_y, max_x]
 
-    # sort by id_object, the first one is on the left
-    labels = sorted(label_list, key=lambda label: label.bbox[1]) # x min
+    # Sort labels to retain digit order
+    labels = sort_labels(label_list)
 
     new_bbox = merge_bbox(labels)
 
