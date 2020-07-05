@@ -426,6 +426,7 @@ def filter_images(objects, props):
 
     return real_objects, real_props
 
+
 def process(img, marked, elt = skimage.morphology.disk(1), inversed=True, ret_props=False):
     """
     From the original image, the marks and the structural element for closure,
@@ -435,7 +436,7 @@ def process(img, marked, elt = skimage.morphology.disk(1), inversed=True, ret_pr
     closed = fill_holes(extracted, elt)
     objects, props = get_objects(closed, True)
 
-    real_objects, real_props = filter_images(objects, props)
+    real_objects, real_props = objects, props #filter_images(objects, props)
     turned = real_objects
 
     if ret_props:
