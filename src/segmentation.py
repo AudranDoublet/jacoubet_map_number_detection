@@ -259,6 +259,16 @@ def check_is_striped_zone(binary):
     return (test(sm1) and test(sm2)) or test(sm1, min(150, bg_count / 2), 0.5) or test(sm2, 160, 0.5)
 
 
+def check_if_empty(binary):
+    empty = True
+
+    for reg in regionprops(label(binary)):
+        if reg.area / reg.filled_area > 0.6:
+            empty = False
+
+    return empty
+
+
 def tclosing(image):
     h, w = image.shape
     cls = 10
@@ -775,8 +785,12 @@ def postprocess_filter(outputFile, props, original_images):
             skimage.io.imsave(os.path.join(outputFile, f"postprocess_suppr_striped_{current:04}.png"), img_as_ubyte(img, True))
             current += 1
 
-        elif np.max(img) < 110:
+        elif threshold_otsu(img) < 110:
             skimage.io.imsave(os.path.join(outputFile, f"postprocess_suppr_too_dark_{current:04}.png"), img_as_ubyte(img, True))
+            current += 1
+
+        elif check_if_empty(binary):
+            skimage.io.imsave(os.path.join(outputFile, f"postprocess_suppr_empty_{current:04}.png"), img_as_ubyte(img, True))
             current += 1
 
         elif check_is_line(binary):
