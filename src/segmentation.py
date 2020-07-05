@@ -363,16 +363,8 @@ def remove_noise(images, properties=None):
     results_prop = []
 
     for i, obj in enumerate(images):
-
-        if check_is_striped_zone(obj):
-            suppr.append(obj)
-
-        elif (obj.shape[0] <= k2[0] or obj.shape[1] <= k2[1] or obj.shape[1] + obj.shape[0] < seuil):
-            suppr.append(obj)
-
-        else:
-            results.append(obj)
-            results_prop.append(properties[i])
+        results.append(obj)
+        results_prop.append(properties[i])
 
     return results, results_prop, suppr
 
@@ -436,7 +428,7 @@ def process(img, marked, elt = skimage.morphology.disk(1), inversed=True, ret_pr
     closed = fill_holes(extracted, elt)
     objects, props = get_objects(closed, True)
 
-    real_objects, real_props = objects, props #filter_images(objects, props)
+    real_objects, real_props = objects, props
     turned = real_objects
 
     if ret_props:
@@ -826,6 +818,66 @@ def apply_mask_gray(original, prop):
 
     return denoised
 
+from sklearn.neighbors import NearestNeighbors
+from skimage.metrics import peak_signal_noise_ratio
+
+
+def recreate_image_with_shape(image, shape):
+    result = np.zeros(shape, dtype=image.dtype)
+
+    dy = (shape[0] - image.shape[0]) // 2
+    dx = (shape[1] - image.shape[1]) // 2
+
+    result[dy:dy+image.shape[0], dx:dx+image.shape[1]] = image
+    return result
+
+
+def postprocess_filter_distance(outputFile, props, original_images):
+    current = 0
+
+    out_prop = []
+    out_img  = []
+
+    centroids = np.array([prop.centroid for prop in props])
+
+    knn = NearestNeighbors(n_neighbors=4).fit(centroids)
+    distances, indices = knn.kneighbors(centroids)
+
+    for distances, indices, p, img in zip(distances, indices, props, original_images):
+        binary = img > threshold_otsu(img)
+
+        if distances[1] > 500:
+            skimage.io.imsave(os.path.join(outputFile, f"postprocess_suppr_far_away_{current:04}.png"), img_as_ubyte(img, True))
+            current += 1
+            continue
+
+        self_idx = indices[0]
+        psnr = 1e9
+
+        for dist, idx in zip(distances[1:], indices[1:]):
+            if dist > 500:
+                break
+
+            a = original_images[self_idx]
+            b = original_images[idx]
+
+            shape = (max(a.shape[0], b.shape[0]), max(a.shape[1], b.shape[1]))
+
+            a = recreate_image_with_shape(a, shape)
+            b = recreate_image_with_shape(b, shape)
+
+            psnr = min(peak_signal_noise_ratio(a, b), psnr)
+
+        if psnr > 9:
+            skimage.io.imsave(os.path.join(outputFile, f"postprocess_suppr_neighbors_too_similar_{current:04}.png"), img_as_ubyte(img, True))
+            current += 1
+
+        else:
+            out_prop.append(p)
+            out_img.append(img)
+
+    return out_prop, out_img
+
 
 def postprocess_filter(outputFile, props, original_images):
     current = 0
@@ -872,7 +924,7 @@ def postprocess_filter(outputFile, props, original_images):
             out_prop.append(p)
             out_img.append(img)
 
-    return out_prop, out_img
+    return postprocess_filter_distance(outputFile, out_prop, out_img)
 
 
 def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
