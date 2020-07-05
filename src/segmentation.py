@@ -2,7 +2,7 @@ import os
 import math
 import skimage.io
 import cv2
-from skimage.morphology import binary_dilation, binary_closing, dilation, square, remove_small_holes
+from skimage.morphology import *
 from skimage.color import rgb2gray
 from skimage.filters import threshold_otsu
 from skimage import img_as_ubyte
@@ -227,6 +227,20 @@ def count_lines(binary, threshold1=0.3, threshold2=0.5, threshold2_width=2):
     return count
 
 
+def check_has_small_holes(image):
+    h, w = image.shape
+    cls = 10
+
+    result = np.zeros((h + cls*2, w + cls*2))
+    result[cls:-cls,cls:-cls] = image
+
+    binary = result != 0
+    filtered = result != 0
+
+    filtered = remove_small_holes(filtered, 10)
+    return np.sum(filtered ^ binary) > 10
+
+
 def check_is_striped_zone(binary):
     line_count = count_lines(np.bitwise_not(binary)) + count_lines(binary)
 
@@ -267,6 +281,46 @@ def check_if_empty(binary):
             empty = False
 
     return empty
+
+
+def remove_lines_and_circle(binary, threshold1=0.2, threshold_poly=0.9):
+    count = 0
+    lbl = label(binary, connectivity=1)
+
+    result = binary.copy()
+
+    for reg in regionprops(lbl):
+        if reg.major_axis_length == 0.0:
+            continue
+
+        ratio = reg.minor_axis_length / reg.major_axis_length
+        ratio_area = reg.filled_area / reg.convex_area
+        area = reg.area / reg.filled_area
+
+        if ratio_area > 1.0 or area < 0.9:
+            ratio_area = 0.0
+
+        if ratio < threshold1 or (ratio > 0.9 and area > 0.9) or (ratio_area > threshold_poly and ratio > 0.4):
+            result[lbl == reg.label] = 0
+
+
+    return result
+
+
+def check_not_geometric(image):
+    h, w = image.shape
+    cls = 10
+
+    result = np.zeros((h + cls*2, w + cls*2))
+    result[cls:-cls,cls:-cls] = image
+
+    binary = result != 0
+    filtered = result != 0
+
+    filtered = remove_lines_and_circle(binary)
+    filtered = remove_small_objects(filtered, 30)
+
+    return np.sum(filtered) < 20
 
 
 def tclosing(image):
@@ -793,12 +847,20 @@ def postprocess_filter(outputFile, props, original_images):
             skimage.io.imsave(os.path.join(outputFile, f"postprocess_suppr_empty_{current:04}.png"), img_as_ubyte(img, True))
             current += 1
 
+        elif check_not_geometric(binary):
+            skimage.io.imsave(os.path.join(outputFile, f"postprocess_suppr_geometric_{current:04}.png"), img_as_ubyte(img, True))
+            current += 1
+
         elif check_is_line(binary):
             skimage.io.imsave(os.path.join(outputFile, f"postprocess_suppr_line_{current:04}.png"), img_as_ubyte(img, True))
             current += 1
 
         elif check_is_thick(binary):
             skimage.io.imsave(os.path.join(outputFile, f"postprocess_suppr_thick_{current:04}.png"), img_as_ubyte(img, True))
+            current += 1
+
+        elif check_has_small_holes(binary):
+            skimage.io.imsave(os.path.join(outputFile, f"postprocess_suppr_small_holes_{current:04}.png"), img_as_ubyte(img, True))
             current += 1
 
         else:
