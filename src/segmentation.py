@@ -89,7 +89,7 @@ def fill_holes(img, elt = skimage.morphology.disk(1)):
 
 
 from skimage.measure import label, regionprops
-def get_objects(img, ret_props=False):
+def get_objects(img):
     """
     Find the connected components and get their properties in the image
     """
@@ -107,10 +107,7 @@ def get_objects(img, ret_props=False):
         props.append(region)
         objs.append(new_obj)
 
-    if ret_props:
-        return objs, props
-
-    return objs
+    return objs, props
 
 
 import matplotlib.pyplot as plt
@@ -318,7 +315,7 @@ def process(img):
     return the resulting objects in image
     """
     closed = fill_holes(img)
-    objects, props = get_objects(closed, True)
+    objects, props = get_objects(closed)
 
     return objects, props
 
@@ -379,7 +376,7 @@ def add_result(img_res, nb_pixels, results, properties):
      - good proportions
     """
     copy = np.copy(img_res)
-    objects, tmp_properties = get_objects(img_res, ret_props=True)
+    objects, tmp_properties = get_objects(img_res)
     if len(objects) < 2: # if 1 or 0 object: bad cut
         return
 
@@ -805,7 +802,6 @@ def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
     if DEBUG:
         save_processed_heatmap(masked, props2, outputFile, 2)
 
-    # cut multiple images to single one
     singles, multis, single_prop, mult_prop = extract_single_numbers(bin_images, props2)
     if DEBUG:
         save_processed_heatmap(masked, single_prop + mult_prop, outputFile, 3)
@@ -817,6 +813,7 @@ def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
         for i in range(len(multis)):
             skimage.io.imsave(os.path.join(outputFile, f"multi_{i:04}.png"), img_as_ubyte(multis[i], True))
 
+    # cut multiple images to single one
     bin_images, props = multiples_to_singles(singles, multis, single_prop, mult_prop, outputFile)
     if DEBUG:
         save_processed_heatmap(masked, props, outputFile, 4)
