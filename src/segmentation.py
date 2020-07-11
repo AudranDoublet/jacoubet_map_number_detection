@@ -2,6 +2,7 @@ import os
 import math
 import skimage.io
 import cv2
+import numpy as np
 from skimage.morphology import *
 from skimage.color import rgb2gray
 from skimage.filters import threshold_otsu
@@ -77,49 +78,7 @@ def show_image(img):
     plt.imshow(img)
 
 
-from skimage.measure import label, regionprops
-
-def create_rectangles_from_heatmap(heatmap):
-    label_image = label(heatmap)
-    rects = []
-
-    for i, region in enumerate(regionprops(label_image)):
-        bbox = region.bbox
-        rect = ((bbox[1], bbox[0]), (bbox[3], bbox[2]))
-
-        rects.append(rect)
-
-    return rects
-
-
-import numpy as np
-def create_mark(rectangles, shape): # [((begin_i, begin_j), (end_i, end_j)), ...]
-    """
-    Using a list of rectangles, create an image of marks
-    """
-    marked_img = np.zeros(shape = shape, dtype=int)
-    for rect in rectangles:
-        y = rect[1][1] - rect[0][1]
-        marked_img[rect[0][1]:rect[1][1], rect[0][0]:rect[1][0], 3] = 255
-    return marked_img
-
-
-import numpy as np
-def apply_marks(origin, marks, inversed=True):
-    """
-    Extract numbers of the image using the marks
-    """
-
-    if inversed:
-        condition = origin[:,:,0] < 240
-    else:
-        condition = origin[:,:,0] > 120
-
-    return np.bitwise_and(marks[:,:,3] > 0, condition)
-
-
 import skimage.morphology
-# le disk peut changer en fonction des vrai données
 def fill_holes(img, elt = skimage.morphology.disk(1)):
     """
     Closure: to fill holes
@@ -130,8 +89,10 @@ def fill_holes(img, elt = skimage.morphology.disk(1)):
 
 
 from skimage.measure import label, regionprops
-
 def get_objects(img, ret_props=False):
+    """
+    Find the connected components and get their properties in the image
+    """
     props = []
     objs = []
     label_image = label(img)
@@ -150,47 +111,6 @@ def get_objects(img, ret_props=False):
         return objs, props
 
     return objs
-
-
-import numpy as np
-def get_objects_old(img):
-    """
-    From an image containing all the objects, return a list of image with a single object
-    """
-    tmp_img = np.copy(img) # to avoid modifying the original
-
-    # list of objects
-    objs = []
-
-    def get_object(img, obj, i, j):
-        # out of bounds
-        if j >= img.shape[0] or j < 0:
-            return
-        if i >= img.shape[1] or i < 0:
-            return
-        # if objet
-        if img[j][i]:
-            obj[j][i] = True
-            img[j][i] = False
-            # recursive calls
-            get_object(img, obj, i+1, j)
-            get_object(img, obj, i, j+1)
-            get_object(img, obj, i-1, j)
-            get_object(img, obj, i, j-1)
-
-    for j in range(tmp_img.shape[0]):
-        for i in range(tmp_img.shape[1]):
-            # first cell of object
-            if tmp_img[j][i]:
-                # create image for object
-                obj = np.zeros(shape = tmp_img.shape, dtype=bool)
-                # fill the image
-                get_object(tmp_img, obj, i, j)
-                # add to objects
-                objs.append(obj)
-
-    return objs
-
 
 
 import matplotlib.pyplot as plt
@@ -332,6 +252,7 @@ def tclosing(image):
 
     return binary_closing(result != 0, square(cls))
 
+
 def check_is_line(image):
     closing = tclosing(image)
 
@@ -368,7 +289,7 @@ def remove_noise(images, properties=None):
 
     return results, results_prop, suppr
 
-# filtrer: prendre uniquement les images avec un seul nombre (fonctionne uniquement si une majorité de nombres simples)
+
 def extract_single_numbers(images, properties=None):
     # compute mean of shapes
     shapes = [arr.shape for arr in images]
@@ -390,55 +311,21 @@ def extract_single_numbers(images, properties=None):
 
     return singles, multiples, singles_prop, multiples_prop
 
-def turn_image(img): # turn if 3/4 * x > y
-    if img.shape[0] < img.shape[1] * 0.75:
-        return img[::-1].T # -90 degré # comment faire pour le sens ?
-    return img
 
-def turn_images(images):
-    new_imgs = []
-    for img in images:
-        new_imgs.append(turn_image(img))
-    return new_imgs
-
-
-# remove all black and almost all white objects
-def filter_images(objects, props):
-    objects_white = [pixels for pixels in objects if np.any(pixels)]
-    real_objects = []
-    real_props = []
-
-    for i, obj in enumerate(objects_white):
-        nb_zeros = np.count_nonzero(obj)
-        nb_pixels = obj.shape[0] * obj.shape[1]
-        if nb_zeros / nb_pixels < 0.65:
-            real_objects.append(obj)
-            real_props.append(props[i])
-
-    return real_objects, real_props
-
-
-def process(img, marked, elt = skimage.morphology.disk(1), inversed=True, ret_props=False):
+def process(img):
     """
-    From the original image, the marks and the structural element for closure,
-    return and show the resulting objects in image
+    From the original image
+    return the resulting objects in image
     """
-    extracted = img if marked is None else apply_marks(img, marked, inversed)
-    closed = fill_holes(extracted, elt)
+    closed = fill_holes(img)
     objects, props = get_objects(closed, True)
 
-    real_objects, real_props = objects, props
-    turned = real_objects
-
-    if ret_props:
-        return turned, real_props
-
-    return turned
+    return objects, props
 
 
 class Properties:
     """
-    Create properties by hand because we can to change some attributes
+    Create properties by hand because we want to change some attributes
     """
     def __init__(self, label, merge_id, minor_axis_length, major_axis_length, orientation, corner_x, corner_y, bbox=None, centroid=None):
         self.label = label
@@ -466,6 +353,7 @@ class Properties:
             old[1] + self.corner_x
         )
 
+
 def regionprop_to_properties(region_prop):
     """Convert skimage.RegionProp to Properties
     """
@@ -487,7 +375,7 @@ def regionprop_to_properties(region_prop):
 def add_result(img_res, nb_pixels, results, properties):
     """
     Add result only if good cut:
-     - into 2 objects
+     - into 2 or more objects
      - good proportions
     """
     copy = np.copy(img_res)
@@ -496,25 +384,28 @@ def add_result(img_res, nb_pixels, results, properties):
         return
 
     def get_proportions(new_objs):
-        obj1_nb_white = np.count_nonzero(new_objs[0])
-        obj2_nb_white = np.count_nonzero(new_objs[1])
-        div = obj1_nb_white / obj2_nb_white
-        return div
+        nb_white = [np.count_nonzero(obj) for obj in new_objs]
+        nbw = sorted(nb_white, reverse=True)
+        prop = nbw[0] / nbw[1]
+        return prop
 
     prop = get_proportions(objects)
 
-    if prop <= 5 and prop >= 1/5: # good proportions
-        res = {}
-        # save the proportions
-        res["prop"] = prop
-        # save the number of cut pixels
-        res["white_to_black"] = nb_pixels
-        # save the results
-        res["objects"] = objects
-        res["image"] = copy
-        res["nb_objects"] = len(objects)
+    k = 2.5
+    if prop > k or prop < 1/k: # bad proportion
+        return
 
-        results.append((res, properties, tmp_properties))
+    res = {}
+    # save the proportions
+    res["prop"] = prop
+    # save the number of cut pixels
+    res["white_to_black"] = nb_pixels
+    # save the results
+    res["objects"] = objects
+    res["nb_objects"] = len(objects)
+
+    results.append((res, properties, tmp_properties))
+
 
 def pick_results(results, nb_labels):
     """
@@ -538,7 +429,6 @@ def pick_results(results, nb_labels):
             best_res = i
             best_nb = results[i][0]["nb_objects"]
 
-    # we use in postprocess: prop.bbox, minor_axis_length, major_axis_length, centroid, orientation
 
     res, old_prop, properties = results[best_res]
 
@@ -658,55 +548,6 @@ def cut_image(original_img, prop, nb_labels):
     return pick_results(results, nb_labels)
 
 
-def cut_image_with_contours(image, old_prop, padding=5):
-    image = image.astype(np.uint8) * 255
-
-    cnts = cv2.findContours(image, cv2.RETR_EXTERNAL,
-                            cv2.CHAIN_APPROX_SIMPLE)
-    cnts = cnts[0]
-
-    if len(cnts) < 2:
-        return [image], [old_prop]
-
-    top_y = old_prop.bbox[0]
-    top_x = old_prop.bbox[1]
-
-    merge_id = old_prop.label
-    if isinstance(old_prop, Properties):
-        merge_id = old_prop.merge_id
-
-    new_segments = []
-    new_props = []
-    for cnt in cnts:
-        # If object is too small, discard it
-        if cv2.contourArea(cnt) < 30:
-            continue
-
-        x, y, w, h = cv2.boundingRect(cnt)
-        # Create new segment
-        new_segment = image[y:y + h, x:x + h].copy()
-        new_prop = Properties(
-            old_prop.label + 1,
-            merge_id,
-            int(w),
-            int(h),
-            0,
-            top_x,
-            top_y
-        )
-
-        # update the bbox to global image coords
-        new_prop.update_bbox((int(x - padding), int(y - padding), int(x + w + padding), int(y + h + padding)))
-
-        # update the bbox to global image coords
-        new_prop.update_centroid((int((x + x + w) // 2), int((y + y + h) // 2)))
-
-        new_segments.append(new_segment)
-        new_props.append(new_prop)
-
-    return new_segments, new_props
-
-
 def multiples_to_singles(singles, original_imgs, props, m_props, outputFile):
     """
     from list of single images and list of multiple images
@@ -721,53 +562,22 @@ def multiples_to_singles(singles, original_imgs, props, m_props, outputFile):
         # try to cut
         res, res_props, length = cut_image(img, m_props[i], length)
         if res: # success
-            #skimage.io.imsave(os.path.join(outputFile, f"cutting_{i:04}.png"), img_as_ubyte(img, True))
-            #for i2, res_i in enumerate(res):
-            #    skimage.io.imsave(os.path.join(outputFile, f"cutting_{i:04}_into{i2}.png"), img_as_ubyte(res_i, True))
             tmp.extend(res)
             tmp_props.extend(res_props)
         else: # fail to cut
-            skimage.io.imsave(os.path.join(outputFile, "fail_cut_{i:04}.png"), img_as_ubyte(img, True))
+            skimage.io.imsave(os.path.join(outputFile, f"fail_cut_{i:04}.png"), img_as_ubyte(img, True))
             tmp.append(img)
             tmp_props.append(m_props[i])
 
-    # check ~ same shape
-    shapes = [arr.shape for arr in singles + tmp]
-    mean_shape = np.mean(shapes, axis=0)
-
-    k = 0
-
     singles.extend(tmp)
     props.extend(tmp_props)
-    """
-    while len(tmp) > 0:
-        # if too large: multiple numbers
-        if tmp[0].shape[1] > K_SEUIL_MULTIPLE2 * mean_shape[1]:
-            # try to cut
-            res, res_props, length = cut_image(tmp[0], tmp_props[0], length)
-            if res: # success
-                skimage.io.imsave(f"cutting2_{k:04}.png", img_as_ubyte(tmp[0], True))
-                for i2, res_i in enumerate(res):
-                    skimage.io.imsave(f"cutting2_{k:04}_into{i2}.png", img_as_ubyte(res_i, True))
-                k += 1
-                tmp.extend(res)
-                tmp_props.extend(res_props)
-            else: # fail to cut
-                res, res_props = cut_image_with_contours(tmp[0], tmp_props[0])
-                singles.extend(res)
-                props.extend(res_props)
-
-        else:
-            singles.append(tmp[0])
-            props.append(tmp_props[0])
-
-        # pop image from queue
-        tmp = tmp[1:]
-        tmp_props = tmp_props[1:]
-    """
     return singles, props
 
+
 def remove_end_noise(images, properties=None):
+    """
+    Remove images that are too small
+    """
     shapes = [arr.shape for arr in images]
     mean_shape = np.mean(shapes, axis=0)
     k2 = mean_shape * 0.1
@@ -817,9 +627,9 @@ def apply_mask_gray(original, prop):
 
     return denoised
 
+
 from sklearn.neighbors import NearestNeighbors
 from skimage.metrics import peak_signal_noise_ratio
-
 
 def recreate_image_with_shape(image, shape):
     result = np.zeros(shape, dtype=image.dtype)
@@ -944,6 +754,7 @@ def postprocess_filter(outputFile, props, original_images):
 
     return out_prop, out_img
 
+
 def get_original_masked(original, heatmap):
     segment = rgb2gray(original)
     segment = (255 * segment).astype(np.uint8)
@@ -956,6 +767,9 @@ def get_original_masked(original, heatmap):
 
 from PIL import ImageFont, ImageDraw, Image
 def save_processed_heatmap(segment, props, outputFile, idx):
+    """
+    Save heatmap image with rectangles as detected numbers
+    """
     img = Image.fromarray(segment)
     draw = ImageDraw.Draw(img)
 
@@ -966,8 +780,9 @@ def save_processed_heatmap(segment, props, outputFile, idx):
 
     img.save(os.path.join(outputFile, f"heatmaps_objects_{idx}.png"))
 
+
 def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
-    DEBUG = True
+    DEBUG = False
     original = load_image(inputFile)
     heatmap = load_image(heatmapFile)
     roads = load_image(roadFile)
@@ -976,7 +791,7 @@ def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
 
     os.makedirs(outputFile, exist_ok=True)
 
-    images, props = process(heatmap, None, ret_props=True)
+    images, props = process(heatmap)
     if DEBUG:
         save_processed_heatmap(masked, props, outputFile, 1)
 
@@ -1016,7 +831,6 @@ def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
     props = [regionprop_to_properties(rp) for rp in props_end]
 
     for i, bin_im in enumerate(bin_images_end):
-        #skimage.io.imsave(os.path.join(outputFile, f"bin_{i:04}.png"), (255 * bin_im).astype(np.uint8))
         skimage.io.imsave(os.path.join(outputFile, f"bin_{i:04}.png"), img_as_ubyte(bin_im, True))
 
     original = rgb2gray(original)
@@ -1060,6 +874,3 @@ def process_from_heatmaps(inputFile, heatmapFile, roadFile, outputFile):
         # Convert segment to grayscale and normalize for classification model
         skimage.io.imsave(os.path.join(outputFile, f"{i:04}_unrotate.png"), image.astype(np.uint8))
         skimage.io.imsave(os.path.join(outputFile, f"{i:04}.png"), rotate.astype(np.uint8))
-
-
-#process_from_heatmaps("output_dir/03_heatmaps.png", "results")
