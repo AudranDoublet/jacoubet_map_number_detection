@@ -903,7 +903,7 @@ We have also had some ideas to improve the performance of the algorithm after th
 You will find here the code to run our algorithm on an atlas image.
 Or with bash:
 ```bash
-python3 inputs/ results/ data/keras_brain3
+python3 src/pipeline.py inputs/ results/ data/keras_brain3
 ```
 
 
