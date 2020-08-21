@@ -38,8 +38,6 @@ plt.imshow(im)
 
 
 
-    <matplotlib.image.AxesImage at 0x7f860fcced68>
-
 
 
 
@@ -94,8 +92,6 @@ plt.imshow(im)
 
 
 
-    <matplotlib.image.AxesImage at 0x7f860fed3470>
-
 
 
 
@@ -114,8 +110,6 @@ plt.imshow(im)
 
 
 
-
-    <matplotlib.image.AxesImage at 0x7f860fe35240>
 
 
 
@@ -157,8 +151,6 @@ plt.imshow(im)
 
 
 
-    <matplotlib.image.AxesImage at 0x7f25ea7a40b8>
-
 
 
 
@@ -182,8 +174,6 @@ plt.imshow(_plt_im)
 
 
 
-
-    <matplotlib.image.AxesImage at 0x7f25ea621780>
 
 
 
@@ -210,8 +200,6 @@ plt.imshow(_plt_im)
 
 
 
-
-    <matplotlib.image.AxesImage at 0x7f25e9fd1438>
 
 
 
@@ -263,8 +251,6 @@ plt.imshow(im)
 
 
 
-    <matplotlib.image.AxesImage at 0x7f8611e17dd8>
-
 
 
 
@@ -284,8 +270,6 @@ plt.imshow(im)
 
 
 
-    <matplotlib.image.AxesImage at 0x7f860fe45550>
-
 
 
 
@@ -304,8 +288,6 @@ plt.imshow(im)
 
 
 
-
-    <matplotlib.image.AxesImage at 0x7f860fcecf60>
 
 
 
@@ -357,8 +339,6 @@ plt.imshow(im)
 
 
 
-    <matplotlib.image.AxesImage at 0x7f4163ec3d68>
-
 
 
 
@@ -396,8 +376,6 @@ plt.imshow(im)
 
 
 
-    <matplotlib.image.AxesImage at 0x7f4163d03d68>
-
 
 
 
@@ -433,8 +411,6 @@ plt.imshow(_plot_img)
 
 
 
-    <matplotlib.image.AxesImage at 0x7f4163c62668>
-
 
 
 
@@ -459,8 +435,6 @@ plt.imshow(blobs)
 
 
 
-
-    <matplotlib.image.AxesImage at 0x7f4163b1c1d0>
 
 
 
@@ -505,8 +479,6 @@ plt.imshow(_plot_img)
 
 
 
-
-    <matplotlib.image.AxesImage at 0x7f41655525f8>
 
 
 
