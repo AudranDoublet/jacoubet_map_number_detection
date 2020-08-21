@@ -43,7 +43,7 @@ plt.imshow(im)
 
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_2_1.png)
+![png](readme_images/Jacoubet_Details_2_1.png)
 
 
 ---
@@ -99,7 +99,7 @@ plt.imshow(im)
 
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_6_1.png)
+![png](readme_images/Jacoubet_Details_6_1.png)
 
 
 **Exterior**
@@ -120,7 +120,7 @@ plt.imshow(im)
 
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_8_1.png)
+![png](readme_images/Jacoubet_Details_8_1.png)
 
 
 --- 
@@ -162,7 +162,7 @@ plt.imshow(im)
 
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_10_1.png)
+![png](readme_images/Jacoubet_Details_10_1.png)
 
 
 
@@ -188,7 +188,7 @@ plt.imshow(_plt_im)
 
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_11_1.png)
+![png](readme_images/Jacoubet_Details_11_1.png)
 
 
 
@@ -216,7 +216,7 @@ plt.imshow(_plt_im)
 
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_12_1.png)
+![png](readme_images/Jacoubet_Details_12_1.png)
 
 
 --- 
@@ -268,7 +268,7 @@ plt.imshow(im)
 
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_15_1.png)
+![png](readme_images/Jacoubet_Details_15_1.png)
 
 
 **After watershed**
@@ -289,7 +289,7 @@ plt.imshow(im)
 
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_17_1.png)
+![png](readme_images/Jacoubet_Details_17_1.png)
 
 
 **Result**
@@ -310,7 +310,7 @@ plt.imshow(im)
 
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_19_1.png)
+![png](readme_images/Jacoubet_Details_19_1.png)
 
 
 ## How it could have been improved?
@@ -362,7 +362,7 @@ plt.imshow(im)
 
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_22_1.png)
+![png](readme_images/Jacoubet_Details_22_1.png)
 
 
 ### Grid removal
@@ -401,7 +401,7 @@ plt.imshow(im)
 
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_24_1.png)
+![png](readme_images/Jacoubet_Details_24_1.png)
 
 
 
@@ -438,7 +438,7 @@ plt.imshow(_plot_img)
 
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_26_1.png)
+![png](readme_images/Jacoubet_Details_26_1.png)
 
 
 ### Blobs detection
@@ -465,7 +465,7 @@ plt.imshow(blobs)
 
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_28_1.png)
+![png](readme_images/Jacoubet_Details_28_1.png)
 
 
 ### Filtering
@@ -511,7 +511,7 @@ plt.imshow(_plot_img)
 
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_30_1.png)
+![png](readme_images/Jacoubet_Details_30_1.png)
 
 
 <img src="https://img.pngio.com/warning-icons-png-download-2766-free-icons-and-png-backgrounds-warning-icon-png-2400_2400.png" alt="drawing" width="70"/>
@@ -674,7 +674,7 @@ segmentation.show_images([original[bbox[0]:bbox[2], bbox[1]:bbox[3]]])
 
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_35_1.png)
+![png](readme_images/Jacoubet_Details_35_1.png)
 
 
     Property: {'label': 111, '_slice': (slice(4624, 4654, None), slice(1240, 1274, None)), 'slice': (slice(4624, 4654, None), slice(1240, 1274, None)), '_label_image': array([[0, 0, 0, ..., 0, 0, 0],
@@ -691,7 +691,7 @@ segmentation.show_images([original[bbox[0]:bbox[2], bbox[1]:bbox[3]]])
 
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_35_3.png)
+![png](readme_images/Jacoubet_Details_35_3.png)
 
 
 
@@ -718,7 +718,7 @@ segmentation.show_images(multiples[mid_m:mid_m + 2])
 
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_36_1.png)
+![png](readme_images/Jacoubet_Details_36_1.png)
 
 
     
@@ -726,7 +726,7 @@ segmentation.show_images(multiples[mid_m:mid_m + 2])
 
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_36_3.png)
+![png](readme_images/Jacoubet_Details_36_3.png)
 
 
 
@@ -749,14 +749,14 @@ segmentation.show_images(res)
 
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_37_1.png)
+![png](readme_images/Jacoubet_Details_37_1.png)
 
 
     After:
 
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_37_3.png)
+![png](readme_images/Jacoubet_Details_37_3.png)
 
 
 ## What are the encountered difficulties?
@@ -890,7 +890,7 @@ for i, img in enumerate(seg_imgs):
 ```
 
 
-![png](Jacoubet_Details_files/Jacoubet_Details_46_0.png)
+![png](readme_images/Jacoubet_Details_46_0.png)
 
 
 
