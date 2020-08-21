@@ -15,6 +15,11 @@ There are a lot of bothering problems, and no obvious solution to handle them al
 
 This project is originally an assignment from the school, nothing serious.
 
+# Results
+
+<img src="./readme_images/results_0.png">
+<img src="./readme_images/results_1.png">
+
 # Explanations
 
 ```python
