@@ -1,3 +1,22 @@
+# Introduction
+
+This project aims to extract street numbers from the **Atlas of Jacoubet**: a general map of Paris published during the 19th century.
+
+The **Atlas of Jacoubet** is composed of **54** maps, recognizing digits in those maps is challenging:
+- the maps are huge: shape of ~6000x6000
+- the images are a noisy (noise, grids, drawings that look like digits...)
+- the fonts of the digits may slightly vary
+- the scaling of the digits slightly varies
+- the orientation of the digits varies
+- digits may be stripped by many dashes
+- digits may cross the road/house junctures
+- ...
+There are a lot of bothering problems, and no obvious solution to handle them all elegantly (at least at the time of the writing of this readme).
+
+This project is originally an assignment from the school, nothing serious.
+
+# Explanations
+
 ```python
 import numpy as np
 import cv2
@@ -17,7 +36,7 @@ from scipy.ndimage.morphology import distance_transform_edt
 import matplotlib.pyplot as plt
 ```
 
-# Jacoubet Atlas of Paris
+## Jacoubet Atlas of Paris
 * Audran Doublet
 * Sami Issaadi
 * Amélie Bertin
@@ -58,7 +77,7 @@ The notebook (and project) is divided in 8 major steps:
 * postprocessing 
 
 --- 
-# Step 1: grid detection
+## Step 1: grid detection
 
 This step is a processing step. Its purpose is extracting the background grid from maps.
 
@@ -66,14 +85,14 @@ This step is useful for two reasons:
 * the grid can be useful information for a human reader, but in our case, it's noise
 * retrieving the grid enables us to differentiate the map from the background (containing a lot of noise: title, non-street digits ...)
 
-## How it works
+### How it works
 
 * We retrieve line candidates using morphological erosion, as the seeked lines are nearly verticals/horizontals
 * We filter noise from the candidates
 * The grid line will then have holes, so we use a linear regression to retrieve the real line with a good accuracy (using a RANSAC regressor as there is still noise)
 * Moreover, we allow the line to be a curve, as grid lines are not perfectly straight. To achieve that, we use polynomial features of degree 3
 
-## How it could have been improved
+### How it could have been improved
 
 The used method is unecessary complex, as the Hough Line transform algorithm can solve the problem. Moreover, this step is very time consuming (~1mn/per sample), and using Hough Lines could save a lot of time.
 
@@ -118,7 +137,7 @@ plt.imshow(im)
 
 
 --- 
-# Step 2: striped houses removal
+## Step 2: striped houses removal
 
 This step is a processing step.
 
@@ -126,7 +145,7 @@ The map contains houses which are striped. But these houses can contain digits, 
 
 For this reason, this step's purpose is to remove the background of striped houses and highlight the numbers.
 
-# How it works
+## How it works
 
 After seeking a while for a complex solution, for example trying to detect periodic noise using Fourier transform, or to detect background lines using Hough Lines...
 
@@ -134,7 +153,7 @@ After seeking a while for a complex solution, for example trying to detect perio
 * We apply a gaussian blur on striped houses
 * We binarize the obtained image: the foreground should be kept, the background removed from the original image
 
-# How it could have been improved
+## How it could have been improved
 
 Currently, the results of these steps are far from being perfect: there are many cases where the simple binarization is not effective. We probably could have found a better way to binarize, and thus to remove this noise.
 
@@ -208,7 +227,7 @@ plt.imshow(_plt_im)
 
 
 --- 
-# Step 3: Road segmentation
+## Step 3: Road segmentation
 
 This step is a processing step.
 
@@ -216,11 +235,11 @@ His goal is to segments roads from the other places. This has two main purposes:
 * we are seeking for street numbers. But street numbers are not in roads nor far from roads. So this mask can be used to remove a lot of noise from the image
 * an important problem is to find the right rotation of numbers, as an OCR (or even human reader) can have difficulties to read a number with a wrong rotation (for example, good luck with 6/9). Street segmentation can be used to solve this problem, as numbers are aligned to streets
 
-## Why is it difficult
+### Why is it difficult
 
 Color cannot be used to segment the roads, as houses and roads have the same color. Moreover, the data is far from being perfect, and there is small holes in lines that makes this task even harder.
 
-## What have we tried?
+### What have we tried?
 
 First, we tried to binarize the image, inverse it, and keep only the biggest connex component, which should be the road system. After some adjustements, it works pretty well but their is two major issues:
 * there are unintentional holes in the roads, that make us takes more houses
@@ -228,7 +247,7 @@ First, we tried to binarize the image, inverse it, and keep only the biggest con
 * there are intentional holes in the roads, that make us takes more houses :(
 * on some samples, there are intentional noise that cut the road system in two :(
 
-## What have we done?
+### What have we done?
 
 So we've given up this idea. The second idea is a bit more complex:
 * we binarize the image and remove unwanted small objects, we should mainly be text
@@ -295,22 +314,22 @@ plt.imshow(im)
 ![png](readme_images/Jacoubet_Details_19_1.png)
 
 
-## How it could have been improved?
+### How it could have been improved?
 
 The algorithm works quite well. But the most unstable part is clearly the last one, which has hardcoded hyperparameters. We could have used a machine learning algorithm (for examples random forest ?) instead of doing it by hand.
 
 --- 
-# Step 4: Numbers detection
+## Step 4: Numbers detection
 
 One of the most important task of this is project is the **detection of the locations of the numbers**, and other relevant information like their size and rotation.
 
 
-## Why is it difficult?
+### Why is it difficult?
 
 The presence of several characters, figures and stains of similar shapes and dimension from actual numbers makes the task non-trivial. 
 We could not find any obvious discriminant factor to easily distinguish numbers from noise. 
 
-## What have we tried?
+### What have we tried?
 
 We thought of different ideas:
 - neural network heatmap detection: the idea is to train a NN to detect if an image contains a digit, and it would output a value between 0 and 1 (0 if there are not any digits, 1 if there is certainly a digit). If the output confidence is superior to a threshold, we color the areas of the image depending on how much they have contributed in the increase of the NN output. By applying this model on slices of the image, we get a heatmap of the numbers area: we did not implement that algorithm because synthesizing training data was tricky, but it could have been done with a GAN.
@@ -320,7 +339,7 @@ We thought of different ideas:
 But in a first place, we tried to keep only small connex componants and filter them to keep only those which looks like numbers. It worked pretty well, but removed all numbers which are connected to a line.
 
 
-## What have we done?
+### What have we done?
 
 The selected solution is finally simpler than the other ideas. 
 We first create a mask of the junctures of the map, then we dilate the image so that close digits (potentially numbers) blend together into a blob, we then cut the image using the junctures we have previously extracted, and finally we filter all blobs that cannot be numbers using a simple criterion.
@@ -345,7 +364,7 @@ plt.imshow(im)
 ![png](readme_images/Jacoubet_Details_22_1.png)
 
 
-### Grid removal
+#### Grid removal
 
 
 ```python
@@ -383,7 +402,7 @@ plt.imshow(im)
 
 
 
-### Junctures extraction
+#### Junctures extraction
 
 
 
@@ -417,7 +436,7 @@ plt.imshow(_plot_img)
 ![png](readme_images/Jacoubet_Details_26_1.png)
 
 
-### Blobs detection
+#### Blobs detection
 
 
 ```python
@@ -442,7 +461,7 @@ plt.imshow(blobs)
 ![png](readme_images/Jacoubet_Details_28_1.png)
 
 
-### Filtering
+#### Filtering
 
 
 ```python
@@ -489,17 +508,17 @@ plt.imshow(_plot_img)
 <img src="https://img.pngio.com/warning-icons-png-download-2766-free-icons-and-png-backgrounds-warning-icon-png-2400_2400.png" alt="drawing" width="70"/>
 In the original version, we also take use of the road segmentation to filter more noise too far away or inside the road. Moreover, we also use **Hough Lines** detection to remove the small aligned objects that form a line long enough to be considered as noise.
 
-## Further improvements
+### Further improvements
 
 The major issue with this solution is that numbers too close from the junctures are detected as juncture, we thus lose them after the blob cutting step. However, it should be possible to improve the juncture detections by filtering shapes/lines that are not orthogonal to the road. With a better juncture detection, this method should be sufficient to detect all numbers in the image.
 
 
 --- 
-# Step 5: Segmentation
+## Step 5: Segmentation
 
 Given the heatmaps of numbers from the previous step, we want to separate numbers into single digits, which will then be fed to the classification CNN.
 
-## How it works
+### How it works
 
 * First, we extract the connected components from the heatmaps image and get their properties in the image (like their bounding box coordinates)
 
@@ -731,13 +750,13 @@ segmentation.show_images(res)
 ![png](readme_images/Jacoubet_Details_37_3.png)
 
 
-## What are the encountered difficulties?
+### What are the encountered difficulties?
 
 This step is crucial in the algorithm. Indeed, a wrong cut of the digits can make a huge difference for the following classification step.
 
 A problem we encountered was the binarization of the digits before cutting numbers apart. Here we use a simple otsu threshold to binarize the numbers. However, the numbers are quite small, so using morphological operations to clean the result can easily destroy digits, or merge multiple digits into one.
 
-## What have we done ?
+### What have we done ?
 
 We have chosen the best empirical compromise of morphological operations to separate digits while keeping their integrity.
 
@@ -745,20 +764,20 @@ We have also tried other binarization thresholds, such as Sauvola. We have found
 
 
 --- 
-# Step 6: Digits labelling
+## Step 6: Digits labelling
 
 After having detected numbers and splitted them into digits, we need to recognize what those digits are.
 The font used was always the same, so this task was not too complicated.
 
 
 
-## What are the encountered difficulties?
+### What are the encountered difficulties?
 
 The previous tasks are not perfect and may output noises, so we still have to filter as best as we can. Moreover, even if it is possible to find the rotation of the digit, determining its scaling is not trivial since it can vary for a same digit inside one image. And to make it funnier, the characters drawing vary as well, but not that much.
 
 
 
-## What have we tried?
+### What have we tried?
 
 To solve the issue of labelling digits and discarding noise, we thought of two pathways:
 
@@ -766,19 +785,19 @@ Given that the digit is correctly rotated (rotation-invariance), **template matc
 
 
 
-## What have we done?
+### What have we done?
 
 The most robust and easiest solution we could think of was using a **convolutionnal neural network** to detect the class of a digit image. 
 
-### Training dataset
+#### Training dataset
 We train a CNN over a dataset similar to **MNIST** called [**E-MNIST**](https://www.nist.gov/itl/products-and-services/emnist-dataset) that contains written digits and letters.
 
-### Model purpose
+#### Model purpose
 
 The goal of the model is to distinguish digits from noise (letters, houses structures, random shapes...). 
 It outputs 11 classes: from 0 to 9 for digits, and 10 for noise.
 
-### Model description
+#### Model description
 
 The used model is a simple CNN structure:
 ```python
@@ -799,7 +818,7 @@ The used model is a simple CNN structure:
 
 We did not feel the need to investigate more on the model, this one appeared to be light enough and to perform correctly.
 
-### Data Augmentation
+#### Data Augmentation
 
 The frames taken from the Jacoubet Atlas of Paris often are noisy, hence the need to augment the data we train the model on. Here is the list of the applied random transformations on the image:
 - horizontal/vertical shift
@@ -809,7 +828,7 @@ The frames taken from the Jacoubet Atlas of Paris often are noisy, hence the nee
 - zoom
 - paper stain synthesis
 
-### Training step
+#### Training step
 
 The used dataset being highly imbalanced (the noise class contains more samples than the digit classes), the training step could not be done straightforwardly. The following pseudo-code is better than long explanations:
 
@@ -823,7 +842,7 @@ train model on dataset made from Jacoubet Atlas of Paris samples
 To summarize, we first train the model to recognize the digits, and then we train it to distinguish the different digits from noise, we iterate over this process until we get reasonnable results (\~95% on digits only dataset, \~85% on the mixed dataset). Once we have a general model, we specialize it on a small dataset made from samples taken from the Jacoubet Atlas of Paris (\~300 samples), on which the model performs an accuracy of 99.5%.
 
 
-## Inference step
+### Inference step
 
 Let's run our CNN! We are using samples from our pipeline which previously segmented the digits, and applied the measured rotation.
 
@@ -866,7 +885,7 @@ for i, img in enumerate(seg_imgs):
 
 
 
-## How can it be improved?
+### How can it be improved?
 
 Set apart from tweaking the model structure, there is no other evident way of improving the performance of this solution. However, it seems like an overkill solution for such problem. A greater investigation on the **template matching** solution may have lead to similar results.
 
@@ -878,11 +897,11 @@ Set apart from tweaking the model structure, there is no other evident way of im
 ```
 
 ---
-# Conclusion
+## Conclusion
 
 After having applied all of these 8 steps to the given dataset samples, our solution obtained a Levenshtein Mean of 0.01971 (first on the leaderboard, yay!). 
 
-## Limits and improvements
+### Limits and improvements
 
 Our solution has given quite a good score, but is not perfect. There are still numbers which are misclassified or numbers which are simply not detected at all (see results below).
 We have seen previously that almost every step of the algorithm can be tweaked and enhanced to get an overall better performance.
