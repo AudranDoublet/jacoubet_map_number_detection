@@ -946,13 +946,3 @@ model_path = 'keras_brain3'
 # Run the pipeline
 pipeline = Pipeline(input_path, output_path, model_path).run()
 ```
-
-
-```python
-
-```
-
-
-```python
-
-```
