@@ -68,16 +68,6 @@ def load_image(image_path):
     return skimage.io.imread(image_path)
 
 
-import matplotlib.pyplot as plt
-plt.rcParams['image.cmap'] = 'gray'
-def show_image(img):
-    """
-    Show a single image
-    """
-    fig = plt.figure(figsize = (15,10))
-    plt.imshow(img)
-
-
 import skimage.morphology
 def fill_holes(img, elt = skimage.morphology.disk(1)):
     """
@@ -108,25 +98,6 @@ def get_objects(img):
         objs.append(new_obj)
 
     return objs, props
-
-
-import matplotlib.pyplot as plt
-plt.rcParams['image.cmap'] = 'gray'
-def show_images(objects, col=5):
-    """
-    Show a list of images (max 5 columns) = input
-    """
-    fig = plt.figure(figsize = (14,8))
-
-    length = len(objects)
-
-    rows = length // col + 1
-    columns = col
-
-    for i in range(length):
-        fig.add_subplot(rows, columns, i + 1)
-        plt.imshow(objects[i])
-    plt.show()
 
 
 def count_lines(binary, threshold1=0.3, threshold2=0.5, threshold2_width=2):

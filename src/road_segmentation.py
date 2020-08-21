@@ -15,16 +15,7 @@ from scipy import ndimage as ndi
 
 import numpy as np
 
-import matplotlib.pyplot as plt
-
 from scipy.ndimage.morphology import distance_transform_edt
-
-def show_image(img):
-    """
-    Show a single image
-    """
-    fig = plt.figure(figsize = (15,10))
-    plt.imshow(img)
 
 def save_image(img, name):
     skimage.io.imsave(name, img)
